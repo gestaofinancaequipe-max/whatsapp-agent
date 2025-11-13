@@ -152,40 +152,81 @@ export async function sendWhatsAppMessage(
  */
 export function extractMessage(body: WebhookPayload): WhatsAppMessage | null {
   try {
-    // Estrutura do webhook do Meta:
-    // body.entry[0].changes[0].value.messages[0]
-    const entry = body.entry?.[0]
-    const change = entry?.changes?.[0]
-    const value = change?.value
-    const messages = value?.messages
+    // Estrutura do webhook do Meta pode variar:
+    // - Mensagens: body.entry[0].changes[0].value.messages[0]
+    // - Status: body.entry[0].changes[0].value.statuses[0]
+    // - Outros eventos podem vir em structures diferentes
 
-    if (!messages || messages.length === 0) {
-      console.log('⚠️ No messages found in webhook payload')
+    const entry = body.entry?.[0]
+    if (!entry) {
+      console.log('⚠️ No entry found in webhook payload')
       return null
     }
 
-    const message = messages[0]
-
-    const extractedMessage: WhatsAppMessage = {
-      from: message.from,
-      id: message.id,
-      timestamp: message.timestamp,
-      type: message.type,
-      text: message.text,
+    const changes = entry.changes
+    if (!changes || changes.length === 0) {
+      console.log('⚠️ No changes found in webhook entry')
+      return null
     }
 
-    console.log('📥 Extracted message:', {
-      from: extractedMessage.from,
-      type: extractedMessage.type,
-      hasText: !!extractedMessage.text,
-      textPreview: extractedMessage.text?.body?.substring(0, 50),
+    // Iterar sobre todas as mudanças para encontrar mensagens
+    for (const change of changes) {
+      const value = change?.value
+      if (!value) continue
+
+      // Verificar se há mensagens nesta mudança
+      const messages = value.messages
+      if (messages && messages.length > 0) {
+        const message = messages[0]
+
+        const extractedMessage: WhatsAppMessage = {
+          from: message.from,
+          id: message.id,
+          timestamp: message.timestamp,
+          type: message.type,
+          text: message.text,
+        }
+
+        console.log('📥 Extracted message:', {
+          from: extractedMessage.from,
+          type: extractedMessage.type,
+          hasText: !!extractedMessage.text,
+          textPreview: extractedMessage.text?.body?.substring(0, 50),
+        })
+
+        return extractedMessage
+      }
+
+      // Se não há mensagens, verificar se há status (notificações de entrega)
+      if (value.statuses && value.statuses.length > 0) {
+        const status = value.statuses[0]
+        console.log('ℹ️ Received status update (not a message):', {
+          statusId: status.id,
+          status: status.status,
+          recipientId: status.recipient_id,
+          timestamp: status.timestamp,
+        })
+        // Status updates não são mensagens, então retornamos null
+        return null
+      }
+    }
+
+    // Se chegou aqui, não encontrou mensagens nem status conhecidos
+    console.log('⚠️ No messages found in webhook payload')
+    console.log('Payload structure:', {
+      entriesCount: body.entry?.length || 0,
+      changesCount: body.entry?.[0]?.changes?.length || 0,
+      hasMessages: body.entry?.[0]?.changes?.[0]?.value?.messages ? true : false,
+      hasStatuses: body.entry?.[0]?.changes?.[0]?.value?.statuses ? true : false,
+      valueKeys: body.entry?.[0]?.changes?.[0]?.value ? Object.keys(body.entry[0].changes[0].value) : [],
     })
 
-    return extractedMessage
+    return null
   } catch (error: any) {
     console.error('❌ Error extracting message from webhook:', {
       error: error.message,
-      body: JSON.stringify(body).substring(0, 200),
+      stack: error.stack,
+      bodyPreview: JSON.stringify(body).substring(0, 500),
     })
     return null
   }

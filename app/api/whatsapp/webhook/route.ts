@@ -161,6 +161,27 @@ export async function POST(request: NextRequest) {
       hasCredentials,
     })
 
+    // Log detalhado do payload completo para debug
+    console.log('🔍 Full webhook payload structure:', {
+      hasObject: typeof body === 'object',
+      keys: Object.keys(body),
+      entryStructure: body.entry?.map((entry: any, idx: number) => ({
+        index: idx,
+        hasId: !!entry.id,
+        hasChanges: !!entry.changes,
+        changesLength: entry.changes?.length,
+        changesTypes: entry.changes?.map((change: any) => ({
+          hasValue: !!change.value,
+          valueKeys: change.value ? Object.keys(change.value) : [],
+          hasMessages: !!change.value?.messages,
+          messagesLength: change.value?.messages?.length,
+          hasStatuses: !!change.value?.statuses,
+          statusesLength: change.value?.statuses?.length,
+        })),
+      })),
+      fullPayloadPreview: JSON.stringify(body).substring(0, 500),
+    })
+
     // Extrair a mensagem do payload
     const message = extractMessage(body)
 
