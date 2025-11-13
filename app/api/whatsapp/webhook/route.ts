@@ -63,38 +63,76 @@ export async function GET(request: NextRequest) {
     })
 
     // Normalizar tokens para comparação (trim whitespace, remover caracteres invisíveis)
-    const normalizedReceivedToken = token?.trim().replace(/\s+/g, '') || ''
-    const normalizedExpectedToken = testToken?.trim().replace(/\s+/g, '') || ''
+    // Múltiplas formas de normalização para garantir match
+    const normalizeToken = (t: string | null) => {
+      if (!t) return ''
+      // 1. Trim básico
+      let normalized = t.trim()
+      // 2. Remover todos os espaços (incluindo tabs, newlines, etc)
+      normalized = normalized.replace(/\s+/g, '')
+      // 3. Remover caracteres invisíveis (zero-width, etc)
+      normalized = normalized.replace(/[\u200B-\u200D\uFEFF]/g, '')
+      // 4. Converter para lowercase para comparação case-insensitive
+      // (se necessário - mas vamos manter case-sensitive por padrão)
+      return normalized
+    }
     
-    console.log('🔑 Token comparison (DETAILED):', {
-      received: token,
+    const normalizedReceivedToken = normalizeToken(token || '')
+    const normalizedExpectedToken = normalizeToken(testToken || '')
+    
+    // Comparação case-insensitive também
+    const receivedLower = normalizedReceivedToken.toLowerCase()
+    const expectedLower = normalizedExpectedToken.toLowerCase()
+    
+    console.log('🔑 Token comparison (ULTRA DETAILED):', {
+      receivedRaw: token,
+      receivedLength: token?.length,
       receivedNormalized: normalizedReceivedToken,
-      receivedLength: normalizedReceivedToken.length,
+      receivedNormalizedLength: normalizedReceivedToken.length,
+      receivedLower: receivedLower,
       expectedFromEnv: expectedToken,
+      expectedFromEnvLength: expectedToken?.length,
       testTokenUsed: testToken,
+      testTokenLength: testToken?.length,
       expectedNormalized: normalizedExpectedToken,
-      expectedLength: normalizedExpectedToken.length,
+      expectedNormalizedLength: normalizedExpectedToken.length,
+      expectedLower: expectedLower,
       strictMatch: token === testToken,
       normalizedMatch: normalizedReceivedToken === normalizedExpectedToken,
-      receivedCharCodes: normalizedReceivedToken.split('').map(c => c.charCodeAt(0)),
-      expectedCharCodes: normalizedExpectedToken.split('').map(c => c.charCodeAt(0)),
+      caseInsensitiveMatch: receivedLower === expectedLower,
+      receivedCharCodes: normalizedReceivedToken.split('').map((c, i) => ({
+        char: c,
+        code: c.charCodeAt(0),
+        pos: i,
+      })),
+      expectedCharCodes: normalizedExpectedToken.split('').map((c, i) => ({
+        char: c,
+        code: c.charCodeAt(0),
+        pos: i,
+      })),
       usingFallback: !expectedToken,
+      // Hex dump para debug absoluto
+      receivedHex: normalizedReceivedToken.split('').map(c => c.charCodeAt(0).toString(16)).join(' '),
+      expectedHex: normalizedExpectedToken.split('').map(c => c.charCodeAt(0).toString(16)).join(' '),
     })
 
     // Verificar se é uma requisição de verificação do Meta
-    // Usar comparação normalizada para evitar problemas com espaços/caracteres invisíveis
+    // Usar múltiplas formas de comparação para garantir match
     const modeMatch = mode === 'subscribe'
     const tokenMatchStrict = token === testToken
     const tokenMatchNormalized = normalizedReceivedToken === normalizedExpectedToken
+    const tokenMatchCaseInsensitive = receivedLower === expectedLower
     
     console.log('🔍 Verification checks:', {
       modeMatch,
       tokenMatchStrict,
       tokenMatchNormalized,
-      finalDecision: modeMatch && (tokenMatchStrict || tokenMatchNormalized),
+      tokenMatchCaseInsensitive,
+      finalDecision: modeMatch && (tokenMatchStrict || tokenMatchNormalized || tokenMatchCaseInsensitive),
     })
 
-    if (modeMatch && (tokenMatchStrict || tokenMatchNormalized)) {
+    // Aceitar se qualquer uma das comparações passar
+    if (modeMatch && (tokenMatchStrict || tokenMatchNormalized || tokenMatchCaseInsensitive)) {
       console.log('✅ Webhook verified successfully!')
       console.log('📤 Returning challenge to Meta:', challenge)
       
@@ -112,23 +150,83 @@ export async function GET(request: NextRequest) {
       mode,
       tokenMatchStrict,
       tokenMatchNormalized,
+      tokenMatchCaseInsensitive,
       reason: !modeMatch ? 'mode !== subscribe' : 'token mismatch',
       receivedToken: token,
+      receivedNormalized: normalizedReceivedToken,
       expectedToken: testToken,
+      expectedNormalized: normalizedExpectedToken,
+      receivedLength: normalizedReceivedToken.length,
+      expectedLength: normalizedExpectedToken.length,
+      lengthsMatch: normalizedReceivedToken.length === normalizedExpectedToken.length,
       envVarExists: !!expectedToken,
       usingFallback: !expectedToken,
+      diffAtPosition: (() => {
+        const minLen = Math.min(normalizedReceivedToken.length, normalizedExpectedToken.length)
+        for (let i = 0; i < minLen; i++) {
+          if (normalizedReceivedToken[i] !== normalizedExpectedToken[i]) {
+            return {
+              position: i,
+              receivedChar: normalizedReceivedToken[i],
+              expectedChar: normalizedExpectedToken[i],
+              receivedCode: normalizedReceivedToken.charCodeAt(i),
+              expectedCode: normalizedExpectedToken.charCodeAt(i),
+            }
+          }
+        }
+        if (normalizedReceivedToken.length !== normalizedExpectedToken.length) {
+          return {
+            position: minLen,
+            receivedLength: normalizedReceivedToken.length,
+            expectedLength: normalizedExpectedToken.length,
+            note: 'Different lengths',
+          }
+        }
+        return null
+      })(),
     })
 
     // Token inválido ou modo incorreto
     // Retornar resposta detalhada para debug (em produção, apenas 'Forbidden')
+    const diffAtPosition = (() => {
+      const minLen = Math.min(normalizedReceivedToken.length, normalizedExpectedToken.length)
+      for (let i = 0; i < minLen; i++) {
+        if (normalizedReceivedToken[i] !== normalizedExpectedToken[i]) {
+          return {
+            position: i,
+            receivedChar: normalizedReceivedToken[i],
+            expectedChar: normalizedExpectedToken[i],
+            receivedCode: normalizedReceivedToken.charCodeAt(i),
+            expectedCode: normalizedExpectedToken.charCodeAt(i),
+          }
+        }
+      }
+      if (normalizedReceivedToken.length !== normalizedExpectedToken.length) {
+        return {
+          position: minLen,
+          receivedLength: normalizedReceivedToken.length,
+          expectedLength: normalizedExpectedToken.length,
+          note: 'Different lengths',
+        }
+      }
+      return null
+    })()
+
     return new NextResponse(
       JSON.stringify({
         error: 'Forbidden',
         debug: {
           modeMatch,
-          tokenMatch: tokenMatchStrict || tokenMatchNormalized,
+          tokenMatchStrict,
+          tokenMatchNormalized,
+          tokenMatchCaseInsensitive,
+          tokenMatch: tokenMatchStrict || tokenMatchNormalized || tokenMatchCaseInsensitive,
           envVarExists: !!expectedToken,
           usingFallback: !expectedToken,
+          receivedLength: normalizedReceivedToken.length,
+          expectedLength: normalizedExpectedToken.length,
+          lengthsMatch: normalizedReceivedToken.length === normalizedExpectedToken.length,
+          diffAtPosition,
         },
       }),
       {
