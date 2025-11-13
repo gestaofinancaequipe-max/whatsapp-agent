@@ -2,8 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { extractMessage, sendWhatsAppMessage } from '@/lib/whatsapp'
 
 /**
- * GET - Verificação do webhook pelo Meta
- * Meta envia um desafio (challenge) que precisa ser retornado para verificar o webhook
+ * GET - Verificação do webhook pelo Meta 
+ * Meta envia um desafio (challenge) que precisa ser retornado para verificar o webhook --
  */
 export async function GET(request: NextRequest) {
   try {
