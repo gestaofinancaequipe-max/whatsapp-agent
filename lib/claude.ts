@@ -3,10 +3,12 @@ import Anthropic from '@anthropic-ai/sdk'
 /**
  * Processa uma mensagem usando Claude API e retorna uma resposta conversacional
  * @param message Mensagem recebida do usuário
+ * @param history Histórico opcional de mensagens anteriores [{role: 'user'|'assistant', content: string}, ...]
  * @returns Resposta gerada pelo Claude ou null em caso de erro
  */
 export async function processMessageWithClaude(
-  message: string
+  message: string,
+  history?: Array<{ role: string; content: string }>
 ): Promise<string | null> {
   try {
     const apiKey = process.env.ANTHROPIC_API_KEY
@@ -22,22 +24,42 @@ export async function processMessageWithClaude(
       apiKey: apiKey,
     })
 
-    console.log('🤖 Processing message with Claude:', {
-      messageLength: message.length,
-      messagePreview: message.substring(0, 100),
+    // Construir array de mensagens incluindo histórico se disponível
+    let messages: Array<{ role: 'user' | 'assistant'; content: string }> = []
+
+    if (history && history.length > 0) {
+      // Converter histórico para formato do Claude
+      messages = history.map((msg) => ({
+        role: msg.role as 'user' | 'assistant',
+        content: msg.content,
+      }))
+      console.log('🤖 Processing message with Claude (with history):', {
+        messageLength: message.length,
+        messagePreview: message.substring(0, 100),
+        historyLength: history.length,
+        historyRoles: history.map((h) => h.role),
+      })
+    } else {
+      console.log('🤖 Processing message with Claude (no history):', {
+        messageLength: message.length,
+        messagePreview: message.substring(0, 100),
+      })
+    }
+
+    // Adicionar mensagem atual ao final
+    messages.push({
+      role: 'user',
+      content: message,
     })
+
+    console.log('📝 Total messages in context:', messages.length)
 
     // Fazer requisição para Claude
     const response = await anthropic.messages.create({
       model: 'claude-sonnet-4-20250514',
       max_tokens: 1024,
       system: 'Você é um assistente conversacional amigável no WhatsApp. Responda de forma natural, casual e em português brasileiro. Seja breve e objetivo.',
-      messages: [
-        {
-          role: 'user',
-          content: message,
-        },
-      ],
+      messages: messages,
     })
 
     // Extrair texto da resposta

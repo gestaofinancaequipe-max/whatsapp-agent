@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { extractMessage, sendWhatsAppMessage } from '@/lib/whatsapp'
 import { processMessageWithClaude } from '@/lib/claude'
+import {
+  getOrCreateConversation,
+  getConversationHistory,
+  saveMessage,
+} from '@/lib/supabase'
 
 // Forçar runtime Node.js para garantir acesso às variáveis de ambiente
 export const runtime = 'nodejs'
@@ -216,46 +221,88 @@ export async function POST(request: NextRequest) {
           WHATSAPP_PHONE_NUMBER_ID: !whatsappPhoneNumberId,
         })
       } else {
-        // Gerar resposta inteligente usando Claude
-        console.log('🤖 Generating response with Claude...')
-        let replyMessage: string | null = null
-
         try {
-          replyMessage = await processMessageWithClaude(receivedText)
+          // 1. Obter ou criar conversa
+          console.log('🔄 Getting or creating conversation...')
+          const conversationId = await getOrCreateConversation(senderPhone)
+          console.log('✅ Conversation ID:', conversationId)
 
+          // 2. Buscar histórico
+          console.log('📚 Fetching conversation history...')
+          const history = await getConversationHistory(conversationId, 10)
+          console.log('📚 History loaded:', history.length, 'messages')
+
+          // 3. Salvar mensagem do usuário
+          console.log('💾 Saving user message...')
+          await saveMessage(conversationId, 'user', receivedText)
+
+          // 4. Processar com Claude (com histórico)
+          console.log('🤖 Processing with Claude...')
+          let replyMessage = await processMessageWithClaude(receivedText, history)
+
+          // Fallback se Claude retornar null
           if (!replyMessage) {
-            // Fallback para mensagem padrão se Claude falhar
-            console.warn('⚠️ Claude failed, using default message')
+            console.warn('⚠️ Claude returned null, using default message')
             replyMessage = `✅ Mensagem recebida!\n\nVocê disse: "${receivedText}"\n\nEm breve terei mais funcionalidades! 🚀`
           } else {
             console.log('✅ Claude response generated successfully')
           }
+
+          // 5. Salvar resposta do Claude
+          console.log('💾 Saving assistant response...')
+          await saveMessage(conversationId, 'assistant', replyMessage)
+
+          // 6. Enviar resposta via WhatsApp
+          console.log('📤 Sending WhatsApp reply...')
+          const sendResult = await sendWhatsAppMessage(senderPhone, replyMessage)
+
+          if (sendResult) {
+            console.log('✅ Message processed successfully with conversation history:', {
+              messageId: sendResult?.messages?.[0]?.id,
+              to: senderPhone,
+              conversationId,
+              historyLength: history.length,
+            })
+          } else {
+            console.error('❌ Failed to send auto-reply - check logs above for detailed error')
+            console.error('Possible causes:', {
+              credentialsConfigured: hasCredentials,
+              tokenValid: !!whatsappToken,
+              phoneNumberIdValid: !!whatsappPhoneNumberId,
+              note: 'See detailed error logs from sendWhatsAppMessage function',
+            })
+          }
         } catch (error: any) {
-          console.error('❌ Error processing with Claude:', {
+          console.error('❌ Error in conversation flow:', {
             error: error.message,
             stack: error.stack,
+            errorType: error.constructor.name,
           })
-          // Fallback para mensagem padrão em caso de erro
-          replyMessage = `✅ Mensagem recebida!\n\nVocê disse: "${receivedText}"\n\nEm breve terei mais funcionalidades! 🚀`
-        }
 
-        // Enviar resposta (do Claude ou padrão)
-        console.log('📤 Attempting to send auto-reply...')
-        const sendResult = await sendWhatsAppMessage(senderPhone, replyMessage)
+          // Fallback: funciona sem histórico (modo stateless)
+          console.log('⚠️ Falling back to stateless mode...')
+          try {
+            let replyMessage = await processMessageWithClaude(receivedText)
 
-        if (sendResult) {
-          console.log('✅ Auto-reply sent successfully:', {
-            messageId: sendResult?.messages?.[0]?.id,
-            to: senderPhone,
-          })
-        } else {
-          console.error('❌ Failed to send auto-reply - check logs above for detailed error')
-          console.error('Possible causes:', {
-            credentialsConfigured: hasCredentials,
-            tokenValid: !!whatsappToken,
-            phoneNumberIdValid: !!whatsappPhoneNumberId,
-            note: 'See detailed error logs from sendWhatsAppMessage function',
-          })
+            if (!replyMessage) {
+              replyMessage = `✅ Mensagem recebida!\n\nVocê disse: "${receivedText}"\n\nEm breve terei mais funcionalidades! 🚀`
+            }
+
+            const sendResult = await sendWhatsAppMessage(senderPhone, replyMessage)
+
+            if (sendResult) {
+              console.log('✅ Fallback message sent successfully:', {
+                messageId: sendResult?.messages?.[0]?.id,
+                to: senderPhone,
+              })
+            } else {
+              console.error('❌ Failed to send fallback message')
+            }
+          } catch (fallbackError: any) {
+            console.error('❌ Error in fallback mode:', {
+              error: fallbackError.message,
+            })
+          }
         }
       }
     } else {
