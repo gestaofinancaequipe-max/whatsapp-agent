@@ -18,6 +18,12 @@ export async function GET(request: NextRequest) {
       challenge,
     })
 
+    console.log('🔑 Token comparison:', {
+      received: token,
+      expected: process.env.WEBHOOK_VERIFY_TOKEN,
+      match: token === process.env.WEBHOOK_VERIFY_TOKEN
+    })
+
     // Verificar se é uma requisição de verificação do Meta
     if (mode === 'subscribe' && token === process.env.WEBHOOK_VERIFY_TOKEN) {
       console.log('✅ Webhook verified successfully')
