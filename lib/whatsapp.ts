@@ -47,9 +47,15 @@ export async function sendWhatsAppMessage(
     // Validação das variáveis de ambiente
     if (!phoneNumberId || !token) {
       console.error('❌ WhatsApp credentials not configured')
-      console.error('Missing:', {
+      console.error('Missing credentials:', {
         phoneNumberId: !phoneNumberId,
+        phoneNumberIdValue: phoneNumberId ? `${phoneNumberId.substring(0, 4)}...` : 'NOT SET',
         token: !token,
+        tokenLength: token?.length || 0,
+        envVarsCheck: {
+          WHATSAPP_PHONE_NUMBER_ID: !!process.env.WHATSAPP_PHONE_NUMBER_ID,
+          WHATSAPP_TOKEN: !!process.env.WHATSAPP_TOKEN,
+        },
       })
       return null
     }
@@ -74,20 +80,67 @@ export async function sendWhatsAppMessage(
       to,
       messageLength: message.length,
       url,
+      phoneNumberId: phoneNumberId,
+      tokenLength: token.length,
     })
 
     const response = await axios.post(url, payload, { headers })
 
-    console.log('✅ Message sent successfully:', response.data)
+    console.log('✅ Message sent successfully:', {
+      messageId: response.data?.messages?.[0]?.id,
+      to: response.data?.contacts?.[0]?.wa_id,
+      status: response.status,
+    })
 
     return response.data
   } catch (error: any) {
-    console.error('❌ Error sending WhatsApp message:', {
+    // Log detalhado do erro da API do Meta
+    const errorDetails: any = {
       to,
-      error: error.message,
-      response: error.response?.data,
+      errorMessage: error.message,
       status: error.response?.status,
-    })
+      statusText: error.response?.statusText,
+      url: error.config?.url,
+    }
+
+    // Detalhes do erro da API do Meta
+    if (error.response?.data) {
+      errorDetails.apiError = {
+        error: error.response.data.error,
+        errorType: error.response.data.error?.type,
+        errorCode: error.response.data.error?.code,
+        errorSubcode: error.response.data.error?.error_subcode,
+        errorMessage: error.response.data.error?.message,
+        errorUserTitle: error.response.data.error?.error_user_title,
+        errorUserMsg: error.response.data.error?.error_user_msg,
+        fbtraceId: error.response.data.error?.fbtrace_id,
+        fullErrorData: error.response.data,
+      }
+    }
+
+    // Informações sobre headers e configuração
+    if (error.config) {
+      errorDetails.requestConfig = {
+        method: error.config.method,
+        url: error.config.url,
+        hasAuthHeader: !!error.config.headers?.Authorization,
+        authHeaderLength: error.config.headers?.Authorization?.length || 0,
+      }
+    }
+
+    // Stack trace para erros de rede
+    if (error.code) {
+      errorDetails.networkError = {
+        code: error.code,
+        errno: error.errno,
+        syscall: error.syscall,
+        address: error.address,
+        port: error.port,
+      }
+    }
+
+    console.error('❌ Error sending WhatsApp message (DETAILED):', errorDetails)
+    
     return null
   }
 }

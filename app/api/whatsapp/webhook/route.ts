@@ -131,6 +131,25 @@ export async function GET(request: NextRequest) {
  * O Meta envia notificações quando há mensagens recebidas
  */
 export async function POST(request: NextRequest) {
+  // Validação prévia das variáveis de ambiente necessárias para envio de mensagens
+  const whatsappToken = process.env.WHATSAPP_TOKEN
+  const whatsappPhoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID
+  
+  const hasCredentials = !!(whatsappToken && whatsappPhoneNumberId)
+  
+  if (!hasCredentials) {
+    console.error('⚠️ WhatsApp credentials not configured for sending messages:', {
+      WHATSAPP_TOKEN: !!whatsappToken,
+      WHATSAPP_PHONE_NUMBER_ID: !!whatsappPhoneNumberId,
+      note: 'Webhook will receive messages but cannot send auto-replies',
+    })
+  } else {
+    console.log('✅ WhatsApp credentials configured:', {
+      phoneNumberId: whatsappPhoneNumberId,
+      tokenLength: whatsappToken.length,
+    })
+  }
+
   try {
     const body = await request.json()
 
@@ -138,6 +157,7 @@ export async function POST(request: NextRequest) {
       hasEntry: !!body.entry,
       entryLength: body.entry?.length,
       timestamp: new Date().toISOString(),
+      hasCredentials,
     })
 
     // Extrair a mensagem do payload
@@ -166,15 +186,34 @@ export async function POST(request: NextRequest) {
         text: receivedText.substring(0, 50),
       })
 
-      // Enviar resposta automática
-      const replyMessage = `✅ Mensagem recebida!\n\nVocê disse: "${receivedText}"\n\nEm breve terei mais funcionalidades! 🚀`
-
-      const sendResult = await sendWhatsAppMessage(senderPhone, replyMessage)
-
-      if (sendResult) {
-        console.log('✅ Auto-reply sent successfully')
+      // Verificar se as credenciais estão disponíveis antes de tentar enviar
+      if (!hasCredentials) {
+        console.error('❌ Cannot send auto-reply: WhatsApp credentials not configured')
+        console.error('Missing:', {
+          WHATSAPP_TOKEN: !whatsappToken,
+          WHATSAPP_PHONE_NUMBER_ID: !whatsappPhoneNumberId,
+        })
       } else {
-        console.error('❌ Failed to send auto-reply')
+        // Enviar resposta automática
+        const replyMessage = `✅ Mensagem recebida!\n\nVocê disse: "${receivedText}"\n\nEm breve terei mais funcionalidades! 🚀`
+
+        console.log('📤 Attempting to send auto-reply...')
+        const sendResult = await sendWhatsAppMessage(senderPhone, replyMessage)
+
+        if (sendResult) {
+          console.log('✅ Auto-reply sent successfully:', {
+            messageId: sendResult?.messages?.[0]?.id,
+            to: senderPhone,
+          })
+        } else {
+          console.error('❌ Failed to send auto-reply - check logs above for detailed error')
+          console.error('Possible causes:', {
+            credentialsConfigured: hasCredentials,
+            tokenValid: !!whatsappToken,
+            phoneNumberIdValid: !!whatsappPhoneNumberId,
+            note: 'See detailed error logs from sendWhatsAppMessage function',
+          })
+        }
       }
     } else {
       console.log('ℹ️ Non-text message received, skipping auto-reply:', {
