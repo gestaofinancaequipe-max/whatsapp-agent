@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { extractMessage, sendWhatsAppMessage } from '@/lib/whatsapp'
+import { processMessageWithClaude } from '@/lib/claude'
 
 // Forçar runtime Node.js para garantir acesso às variáveis de ambiente
 export const runtime = 'nodejs'
@@ -194,9 +195,30 @@ export async function POST(request: NextRequest) {
           WHATSAPP_PHONE_NUMBER_ID: !whatsappPhoneNumberId,
         })
       } else {
-        // Enviar resposta automática
-        const replyMessage = `✅ Mensagem recebida!\n\nVocê disse: "${receivedText}"\n\nEm breve terei mais funcionalidades! 🚀`
+        // Gerar resposta inteligente usando Claude
+        console.log('🤖 Generating response with Claude...')
+        let replyMessage: string | null = null
 
+        try {
+          replyMessage = await processMessageWithClaude(receivedText)
+
+          if (!replyMessage) {
+            // Fallback para mensagem padrão se Claude falhar
+            console.warn('⚠️ Claude failed, using default message')
+            replyMessage = `✅ Mensagem recebida!\n\nVocê disse: "${receivedText}"\n\nEm breve terei mais funcionalidades! 🚀`
+          } else {
+            console.log('✅ Claude response generated successfully')
+          }
+        } catch (error: any) {
+          console.error('❌ Error processing with Claude:', {
+            error: error.message,
+            stack: error.stack,
+          })
+          // Fallback para mensagem padrão em caso de erro
+          replyMessage = `✅ Mensagem recebida!\n\nVocê disse: "${receivedText}"\n\nEm breve terei mais funcionalidades! 🚀`
+        }
+
+        // Enviar resposta (do Claude ou padrão)
         console.log('📤 Attempting to send auto-reply...')
         const sendResult = await sendWhatsAppMessage(senderPhone, replyMessage)
 
