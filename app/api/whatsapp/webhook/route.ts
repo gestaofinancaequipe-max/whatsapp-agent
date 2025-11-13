@@ -1,11 +1,45 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { extractMessage, sendWhatsAppMessage } from '@/lib/whatsapp'
 
+// Forçar runtime Node.js para garantir acesso às variáveis de ambiente
+export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
+
 /**
  * GET - Verificação do webhook pelo Meta 
  * Meta envia um desafio (challenge) que precisa ser retornado para verificar o webhook --
  */
 export async function GET(request: NextRequest) {
+  // LOG INICIAL QUE SEMPRE EXECUTA - ANTES DE QUALQUER OUTRA COISA
+  console.log('🚀 ===== WEBHOOK GET CALLED =====')
+  console.log('📍 Timestamp:', new Date().toISOString())
+  console.log('🌍 Runtime:', process.env.NEXT_RUNTIME || 'unknown')
+  
+  // Listar TODAS as env vars que contêm WEBHOOK
+  const webhookEnvVars: Record<string, string | undefined> = {}
+  Object.keys(process.env).forEach(key => {
+    if (key.includes('WEBHOOK') || key.includes('webhook')) {
+      webhookEnvVars[key] = process.env[key]
+    }
+  })
+  console.log('🔐 All WEBHOOK env vars:', webhookEnvVars)
+  
+  // Log do valor ESPECÍFICO que estamos procurando
+  const expectedToken = process.env.WEBHOOK_VERIFY_TOKEN
+  console.log('🎯 WEBHOOK_VERIFY_TOKEN value:', expectedToken)
+  console.log('📏 WEBHOOK_VERIFY_TOKEN length:', expectedToken?.length)
+  console.log('📝 WEBHOOK_VERIFY_TOKEN type:', typeof expectedToken)
+  console.log('🔢 WEBHOOK_VERIFY_TOKEN exists:', !!expectedToken)
+  
+  // Log de TODAS as env vars relacionadas ao WhatsApp
+  const whatsappEnvVars: Record<string, string | undefined> = {}
+  Object.keys(process.env).forEach(key => {
+    if (key.includes('WHATSAPP') || key.includes('whatsapp')) {
+      whatsappEnvVars[key] = key.includes('TOKEN') ? '***HIDDEN***' : process.env[key]
+    }
+  })
+  console.log('📱 All WHATSAPP env vars (tokens hidden):', whatsappEnvVars)
+
   try {
     const searchParams = request.nextUrl.searchParams
     const mode = searchParams.get('hub.mode')
@@ -15,18 +49,44 @@ export async function GET(request: NextRequest) {
     console.log('🔍 Webhook verification request:', {
       mode,
       token: token ? '***' : null,
+      tokenLength: token?.length,
       challenge,
+      searchParamsKeys: Array.from(searchParams.keys()),
     })
 
-    console.log('🔑 Token comparison:', {
+    // Normalizar tokens para comparação (trim whitespace, remover caracteres invisíveis)
+    const normalizedReceivedToken = token?.trim().replace(/\s+/g, '') || ''
+    const normalizedExpectedToken = expectedToken?.trim().replace(/\s+/g, '') || ''
+    
+    console.log('🔑 Token comparison (DETAILED):', {
       received: token,
-      expected: process.env.WEBHOOK_VERIFY_TOKEN,
-      match: token === process.env.WEBHOOK_VERIFY_TOKEN
+      receivedNormalized: normalizedReceivedToken,
+      receivedLength: normalizedReceivedToken.length,
+      expected: expectedToken,
+      expectedNormalized: normalizedExpectedToken,
+      expectedLength: normalizedExpectedToken.length,
+      strictMatch: token === expectedToken,
+      normalizedMatch: normalizedReceivedToken === normalizedExpectedToken,
+      receivedCharCodes: normalizedReceivedToken.split('').map(c => c.charCodeAt(0)),
+      expectedCharCodes: normalizedExpectedToken.split('').map(c => c.charCodeAt(0)),
     })
 
     // Verificar se é uma requisição de verificação do Meta
-    if (mode === 'subscribe' && token === process.env.WEBHOOK_VERIFY_TOKEN) {
-      console.log('✅ Webhook verified successfully')
+    // Usar comparação normalizada para evitar problemas com espaços/caracteres invisíveis
+    const modeMatch = mode === 'subscribe'
+    const tokenMatchStrict = token === expectedToken
+    const tokenMatchNormalized = normalizedReceivedToken === normalizedExpectedToken
+    
+    console.log('🔍 Verification checks:', {
+      modeMatch,
+      tokenMatchStrict,
+      tokenMatchNormalized,
+      finalDecision: modeMatch && (tokenMatchStrict || tokenMatchNormalized),
+    })
+
+    if (modeMatch && (tokenMatchStrict || tokenMatchNormalized)) {
+      console.log('✅ Webhook verified successfully!')
+      console.log('📤 Returning challenge to Meta:', challenge)
       
       // Retornar o challenge para o Meta
       return new NextResponse(challenge, {
@@ -38,17 +98,62 @@ export async function GET(request: NextRequest) {
     }
 
     console.log('❌ Webhook verification failed:', {
-      modeMatch: mode === 'subscribe',
-      tokenMatch: token === process.env.WEBHOOK_VERIFY_TOKEN,
+      modeMatch,
+      mode,
+      tokenMatchStrict,
+      tokenMatchNormalized,
+      reason: !modeMatch ? 'mode !== subscribe' : 'token mismatch',
     })
 
     // Token inválido ou modo incorreto
     return new NextResponse('Forbidden', { status: 403 })
   } catch (error: any) {
-    console.error('❌ Error in webhook verification:', error)
+    console.error('❌ Error in webhook verification:', {
+      error: error.message,
+      stack: error.stack,
+      expectedToken: expectedToken,
+      envVarsAvailable: Object.keys(process.env).filter(k => k.includes('WEBHOOK')),
+    })
     return new NextResponse('Internal Server Error', { status: 500 })
   }
 }
+
+/**
+ * OUTRAS SOLUÇÕES POSSÍVEIS SE O PROBLEMA PERSISTIR:
+ * 
+ * 1. VERIFICAR NA VERCEL:
+ *    - Settings > Environment Variables
+ *    - Garantir que WEBHOOK_VERIFY_TOKEN está definido para TODOS os ambientes (Production, Preview, Development)
+ *    - Redeploy APÓS adicionar/editar variável (não é automático)
+ * 
+ * 2. TESTAR COM HARDCODED (temporariamente):
+ *    - Substituir expectedToken por 'abc123' diretamente para verificar se o problema é com env vars
+ * 
+ * 3. VERIFICAR ENCODING:
+ *    - Se o token contém caracteres especiais, pode haver problema de encoding
+ *    - Tente usar apenas letras e números no token
+ * 
+ * 4. VERIFICAR NEXT_PUBLIC_ prefix:
+ *    - Para API routes, NÃO precisa de NEXT_PUBLIC_
+ *    - Mas pode tentar criar WEBHOOK_VERIFY_TOKEN E NEXT_PUBLIC_WEBHOOK_VERIFY_TOKEN
+ * 
+ * 5. CACHE DA VERCEL:
+ *    - Fazer "Redeploy" completo (não apenas "Redeploy" do último commit)
+ *    - Ou criar um novo deploy (push novo commit)
+ * 
+ * 6. VERIFICAR SE O ROUTE ESTÁ SENDO CHAMADO:
+ *    - Os logs iniciais (🚀 ===== WEBHOOK GET CALLED =====) devem aparecer SEMPRE
+ *    - Se não aparecerem, o problema pode ser rota/cache
+ * 
+ * 7. TESTAR LOCALMENTE:
+ *    - Criar .env.local com WEBHOOK_VERIFY_TOKEN=abc123
+ *    - Testar com: http://localhost:3000/api/whatsapp/webhook?hub.mode=subscribe&hub.verify_token=abc123&hub.challenge=test123
+ *    - Se funcionar localmente mas não na Vercel, é problema de env vars na Vercel
+ * 
+ * 8. ALTERNATIVA: Usar Edge Runtime com env vars públicas:
+ *    - Se Node.js runtime não funcionar, pode tentar Edge Runtime
+ *    - Mas precisa usar NEXT_PUBLIC_ prefix (menos seguro)
+ */
 
 /**
  * POST - Receber mensagens do WhatsApp via webhook
