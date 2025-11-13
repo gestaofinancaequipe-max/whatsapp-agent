@@ -25,11 +25,19 @@ export async function GET(request: NextRequest) {
   console.log('🔐 All WEBHOOK env vars:', webhookEnvVars)
   
   // Log do valor ESPECÍFICO que estamos procurando
-  const expectedToken = process.env.WEBHOOK_VERIFY_TOKEN
+  // Tentar múltiplas formas de obter o token (caso haja problema com env vars)
+  const expectedToken = process.env.WEBHOOK_VERIFY_TOKEN || process.env.NEXT_PUBLIC_WEBHOOK_VERIFY_TOKEN
+  
+  // FALLBACK TEMPORÁRIO: Se não encontrar env var, usar hardcoded para teste
+  // TODO: Remover este fallback após confirmar que env vars funcionam
+  const testToken = expectedToken || 'abc123'
+  
   console.log('🎯 WEBHOOK_VERIFY_TOKEN value:', expectedToken)
   console.log('📏 WEBHOOK_VERIFY_TOKEN length:', expectedToken?.length)
   console.log('📝 WEBHOOK_VERIFY_TOKEN type:', typeof expectedToken)
   console.log('🔢 WEBHOOK_VERIFY_TOKEN exists:', !!expectedToken)
+  console.log('🧪 Test token (fallback):', testToken)
+  console.log('⚠️ Using fallback?', !expectedToken)
   
   // Log de TODAS as env vars relacionadas ao WhatsApp
   const whatsappEnvVars: Record<string, string | undefined> = {}
@@ -56,25 +64,27 @@ export async function GET(request: NextRequest) {
 
     // Normalizar tokens para comparação (trim whitespace, remover caracteres invisíveis)
     const normalizedReceivedToken = token?.trim().replace(/\s+/g, '') || ''
-    const normalizedExpectedToken = expectedToken?.trim().replace(/\s+/g, '') || ''
+    const normalizedExpectedToken = testToken?.trim().replace(/\s+/g, '') || ''
     
     console.log('🔑 Token comparison (DETAILED):', {
       received: token,
       receivedNormalized: normalizedReceivedToken,
       receivedLength: normalizedReceivedToken.length,
-      expected: expectedToken,
+      expectedFromEnv: expectedToken,
+      testTokenUsed: testToken,
       expectedNormalized: normalizedExpectedToken,
       expectedLength: normalizedExpectedToken.length,
-      strictMatch: token === expectedToken,
+      strictMatch: token === testToken,
       normalizedMatch: normalizedReceivedToken === normalizedExpectedToken,
       receivedCharCodes: normalizedReceivedToken.split('').map(c => c.charCodeAt(0)),
       expectedCharCodes: normalizedExpectedToken.split('').map(c => c.charCodeAt(0)),
+      usingFallback: !expectedToken,
     })
 
     // Verificar se é uma requisição de verificação do Meta
     // Usar comparação normalizada para evitar problemas com espaços/caracteres invisíveis
     const modeMatch = mode === 'subscribe'
-    const tokenMatchStrict = token === expectedToken
+    const tokenMatchStrict = token === testToken
     const tokenMatchNormalized = normalizedReceivedToken === normalizedExpectedToken
     
     console.log('🔍 Verification checks:', {
@@ -103,10 +113,31 @@ export async function GET(request: NextRequest) {
       tokenMatchStrict,
       tokenMatchNormalized,
       reason: !modeMatch ? 'mode !== subscribe' : 'token mismatch',
+      receivedToken: token,
+      expectedToken: testToken,
+      envVarExists: !!expectedToken,
+      usingFallback: !expectedToken,
     })
 
     // Token inválido ou modo incorreto
-    return new NextResponse('Forbidden', { status: 403 })
+    // Retornar resposta detalhada para debug (em produção, apenas 'Forbidden')
+    return new NextResponse(
+      JSON.stringify({
+        error: 'Forbidden',
+        debug: {
+          modeMatch,
+          tokenMatch: tokenMatchStrict || tokenMatchNormalized,
+          envVarExists: !!expectedToken,
+          usingFallback: !expectedToken,
+        },
+      }),
+      {
+        status: 403,
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      }
+    )
   } catch (error: any) {
     console.error('❌ Error in webhook verification:', {
       error: error.message,
