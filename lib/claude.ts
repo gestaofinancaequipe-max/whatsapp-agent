@@ -57,8 +57,8 @@ export async function processMessageWithClaude(
     // Fazer requisição para Claude
     const response = await anthropic.messages.create({
       model: 'claude-sonnet-4-20250514',
-      max_tokens: 1024,
-      system: 'Você é um assistente conversacional amigável no WhatsApp. Responda de forma natural, casual e em português brasileiro. Seja breve e objetivo.',
+      max_tokens: 300,
+      system: 'Você é um assistente conversacional amigável no WhatsApp. Responda de forma natural, casual e em português brasileiro. Seja MUITO breve e objetivo. Se possível responder em 1 frase, melhor.',
       messages: messages,
     })
 
