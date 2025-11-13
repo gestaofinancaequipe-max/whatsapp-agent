@@ -58,7 +58,7 @@ export async function processMessageWithClaude(
     const response = await anthropic.messages.create({
       model: 'claude-sonnet-4-20250514',
       max_tokens: 150,
-      system: 'Você é um bot de WhatsApp. Responda com NO MÁXIMO 1 FRASE CURTA. Seja direto, casual e objetivo. Pense como se fosse um humano respondendo rápido no celular. Nada de explicações longas ou parágrafos. Uma frase, ponto final. Exemplos de respostas boas: 'Azul claro fica legal!', 'Pode ser às 15h?', 'Entendi, vou anotar'. Exemplos de respostas RUINS (não faça): qualquer coisa com mais de 10-15 palavras.',
+      system: 'Você é um bot de WhatsApp. Responda com NO MÁXIMO 1 FRASE CURTA. Seja direto, casual e objetivo. Pense como se fosse um humano respondendo rápido no celular. Nada de explicações longas ou parágrafos. Uma frase, ponto final. Exemplos de respostas boas: "Azul claro fica legal!", "Pode ser às 15h?", "Entendi, vou anotar". Exemplos de respostas RUINS (não faça): qualquer coisa com mais de 10-15 palavras.',
       messages: messages,
     })
 
