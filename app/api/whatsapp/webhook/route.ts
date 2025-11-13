@@ -32,12 +32,19 @@ export async function GET(request: NextRequest) {
   // TODO: Remover este fallback após confirmar que env vars funcionam
   const testToken = expectedToken || 'abc123'
   
-  console.log('🎯 WEBHOOK_VERIFY_TOKEN value:', expectedToken)
+  // Mostrar preview mascarado do token (primeiros e últimos caracteres)
+  const maskToken = (t: string | undefined) => {
+    if (!t || t.length <= 4) return t ? '***' : undefined
+    return `${t.substring(0, 2)}...${t.substring(t.length - 2)}`
+  }
+  
+  console.log('🎯 WEBHOOK_VERIFY_TOKEN value (masked):', maskToken(expectedToken))
   console.log('📏 WEBHOOK_VERIFY_TOKEN length:', expectedToken?.length)
   console.log('📝 WEBHOOK_VERIFY_TOKEN type:', typeof expectedToken)
   console.log('🔢 WEBHOOK_VERIFY_TOKEN exists:', !!expectedToken)
   console.log('🧪 Test token (fallback):', testToken)
   console.log('⚠️ Using fallback?', !expectedToken)
+  console.log('🔍 IMPORTANT: Env var token length:', expectedToken?.length, 'vs Received token length: (will show in request)')
   
   // Log de TODAS as env vars relacionadas ao WhatsApp
   const whatsappEnvVars: Record<string, string | undefined> = {}
@@ -84,37 +91,56 @@ export async function GET(request: NextRequest) {
     const receivedLower = normalizedReceivedToken.toLowerCase()
     const expectedLower = normalizedExpectedToken.toLowerCase()
     
+    // Função para mascarar token longo
+    const maskTokenForLog = (t: string | undefined, maxShow: number = 4) => {
+      if (!t) return undefined
+      if (t.length <= maxShow * 2) return t
+      return `${t.substring(0, maxShow)}...${t.substring(t.length - maxShow)}`
+    }
+    
     console.log('🔑 Token comparison (ULTRA DETAILED):', {
       receivedRaw: token,
       receivedLength: token?.length,
       receivedNormalized: normalizedReceivedToken,
       receivedNormalizedLength: normalizedReceivedToken.length,
-      receivedLower: receivedLower,
-      expectedFromEnv: expectedToken,
+      receivedLower: receivedLower.substring(0, 20) + (receivedLower.length > 20 ? '...' : ''),
+      expectedFromEnv: maskTokenForLog(expectedToken),
       expectedFromEnvLength: expectedToken?.length,
-      testTokenUsed: testToken,
+      testTokenUsed: maskTokenForLog(testToken),
       testTokenLength: testToken?.length,
-      expectedNormalized: normalizedExpectedToken,
+      expectedNormalized: maskTokenForLog(normalizedExpectedToken),
       expectedNormalizedLength: normalizedExpectedToken.length,
-      expectedLower: expectedLower,
+      expectedLower: expectedLower.substring(0, 20) + (expectedLower.length > 20 ? '...' : ''),
       strictMatch: token === testToken,
       normalizedMatch: normalizedReceivedToken === normalizedExpectedToken,
       caseInsensitiveMatch: receivedLower === expectedLower,
-      receivedCharCodes: normalizedReceivedToken.split('').map((c, i) => ({
+      lengthMismatch: normalizedReceivedToken.length !== normalizedExpectedToken.length,
+      receivedCharCodes: normalizedReceivedToken.split('').slice(0, 10).map((c, i) => ({
         char: c,
         code: c.charCodeAt(0),
         pos: i,
       })),
-      expectedCharCodes: normalizedExpectedToken.split('').map((c, i) => ({
+      expectedCharCodes: normalizedExpectedToken.split('').slice(0, 10).map((c, i) => ({
         char: c,
         code: c.charCodeAt(0),
         pos: i,
       })),
       usingFallback: !expectedToken,
-      // Hex dump para debug absoluto
-      receivedHex: normalizedReceivedToken.split('').map(c => c.charCodeAt(0).toString(16)).join(' '),
-      expectedHex: normalizedExpectedToken.split('').map(c => c.charCodeAt(0).toString(16)).join(' '),
+      // Hex dump para debug absoluto (apenas primeiros 20 chars)
+      receivedHex: normalizedReceivedToken.substring(0, 20).split('').map(c => c.charCodeAt(0).toString(16)).join(' '),
+      expectedHex: normalizedExpectedToken.substring(0, 20).split('').map(c => c.charCodeAt(0).toString(16)).join(' '),
     })
+    
+    // ALERTA SE OS TAMANHOS SÃO DIFERENTES
+    if (normalizedReceivedToken.length !== normalizedExpectedToken.length) {
+      console.error('⚠️⚠️⚠️ CRITICAL: Token length mismatch!', {
+        receivedLength: normalizedReceivedToken.length,
+        expectedLength: normalizedExpectedToken.length,
+        receivedPreview: normalizedReceivedToken.substring(0, 6) + '...',
+        expectedPreview: normalizedExpectedToken.substring(0, 6) + '...',
+        message: 'O token na URL não corresponde ao token na env var da Vercel!',
+      })
+    }
 
     // Verificar se é uma requisição de verificação do Meta
     // Usar múltiplas formas de comparação para garantir match
