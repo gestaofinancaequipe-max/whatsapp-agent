@@ -16,7 +16,15 @@ export async function handleQueryFoodIntent(
   }
 
   const food = await findFoodItem(query)
+  console.log('🍽️ Food intent lookup:', {
+    query,
+    found: !!food,
+    foodId: food?.id,
+    serving: food?.serving_size,
+  })
+
   if (!food) {
+    console.log('⚠️ Food not found, logging fallback:', { query })
     await logFoodFallback({
       query,
       phoneNumber: context.user?.phone_number || 'unknown',

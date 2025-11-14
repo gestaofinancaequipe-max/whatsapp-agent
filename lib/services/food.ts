@@ -22,6 +22,7 @@ export async function findFoodItem(query: string): Promise<FoodItem | null> {
   if (!supabase) return null
 
   const normalized = sanitizeFoodQuery(query)
+  console.log('🔎 Searching food item:', { query, normalized })
 
   try {
     const { data, error } = await supabase
@@ -35,6 +36,12 @@ export async function findFoodItem(query: string): Promise<FoodItem | null> {
       .order('usage_count', { ascending: false })
       .limit(1)
       .single()
+
+    console.log('🔎 Food search result:', {
+      query,
+      found: !!data,
+      error,
+    })
 
     if (error && error.code !== 'PGRST116') {
       console.error('❌ Error searching food_items:', {
