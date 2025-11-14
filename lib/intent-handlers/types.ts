@@ -6,6 +6,6 @@ export interface IntentContext {
   messageText: string
   user?: UserRecord | null
   conversationId: string
-  history: Array<{ role: string; content: string }>
+  history: Array<{ role: string; content: string; intent?: string | null }>
 }
 
