@@ -59,6 +59,10 @@ export async function handleLogExerciseIntent(
     return '⚠️ Preciso do seu cadastro para registrar exercícios. Digite "ajuda" para começar.'
   }
 
+  if (!context.user.weight_kg) {
+    return '⚖️ Para calcular calorias queimadas preciso do seu peso atual. Envie algo como "Peso 82kg" e depois tente registrar o exercício novamente.'
+  }
+
   const parsed = parseExerciseMessage(context.messageText)
 
   const exercise = await findExerciseMet(parsed.exerciseQuery)
