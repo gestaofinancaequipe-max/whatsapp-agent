@@ -6,6 +6,8 @@ export interface UserRecord {
   goal_calories: number | null
   goal_protein_g: number | null
   weight_kg: number | null
+  height_cm: number | null
+  age: number | null
   onboarding_completed: boolean
   last_interaction_at: string | null
   last_user_message_at: string | null
