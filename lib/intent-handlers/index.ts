@@ -1,30 +1,29 @@
-import { IntentResult } from '@/lib/types/intents'
 import { generateMockResponse } from '@/lib/handlers/response-handler'
-import { UserRecord } from '@/lib/services/users'
+import { handleGreetingIntent } from '@/lib/intent-handlers/greeting'
+import { handleHelpIntent } from '@/lib/intent-handlers/help'
+import { handleLogFoodIntent } from '@/lib/intent-handlers/log-food'
+import { IntentContext } from '@/lib/intent-handlers/types'
 
-interface IntentHandlerPayload {
-  intentResult: IntentResult
-  messageText: string
-  user?: UserRecord | null
-  conversationId: string
-}
-
-export async function handleIntent({
-  intentResult,
-  messageText,
-  user,
-}: IntentHandlerPayload): Promise<string> {
+export async function handleIntent(
+  context: IntentContext
+): Promise<string> {
   console.log('🧭 Routing intent to handler:', {
-    intent: intentResult.intent,
-    userId: user?.id,
+    intent: context.intentResult.intent,
+    userId: context.user?.id,
   })
 
-  // Placeholder: future implementations will replace this switch
-  const reply = generateMockResponse(intentResult.intent, messageText)
-  console.log('✅ Intent handler executed:', {
-    intent: intentResult.intent,
-  })
-
-  return reply
+  switch (context.intentResult.intent) {
+    case 'greeting':
+      return handleGreetingIntent(context)
+    case 'help':
+      return handleHelpIntent(context)
+    case 'register_meal':
+      return handleLogFoodIntent(context)
+    default:
+      return generateMockResponse(
+        context.intentResult.intent,
+        context.messageText
+      )
+  }
 }
 
