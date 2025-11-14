@@ -1,10 +1,7 @@
-import { processTextWithGroq } from '@/lib/services/groq'
-import {
-  getConversationHistory,
-  getOrCreateConversation,
-  saveMessage,
-} from '@/lib/services/supabase'
+import { getOrCreateConversation, saveMessage } from '@/lib/services/supabase'
 import { sendWhatsAppMessage } from '@/lib/whatsapp'
+import { classifyIntent } from '@/lib/processors/intent-classifier'
+import { generateMockResponse } from '@/lib/handlers/response-handler'
 
 interface TextHandlerParams {
   senderPhone: string
@@ -22,24 +19,35 @@ export async function handleTextMessage({
 }: TextHandlerParams) {
   const userMessageForHistory = displayText ?? text
 
-  const conversationId = await getOrCreateConversation(senderPhone)
-  const history = await getConversationHistory(conversationId, 10)
+  try {
+    const conversationId = await getOrCreateConversation(senderPhone)
+    await saveMessage(conversationId, 'user', userMessageForHistory)
 
-  await saveMessage(conversationId, 'user', userMessageForHistory)
+    const intentResult = classifyIntent(text)
+    const reply = generateMockResponse(intentResult.intent, text)
 
-  let reply = await processTextWithGroq(text, history)
+    console.log('✅ Response generated for intent:', {
+      intent: intentResult.intent,
+      matchedPattern: intentResult.matchedPattern,
+      senderPhone,
+    })
 
-  if (!reply || reply.trim().length === 0) {
-    reply = FALLBACK_REPLY
+    await saveMessage(conversationId, 'assistant', reply)
+    await sendWhatsAppMessage(senderPhone, reply)
+
+    console.log('✅ Text message processed successfully:', {
+      senderPhone,
+      conversationId,
+      intent: intentResult.intent,
+    })
+  } catch (error: any) {
+    console.error('❌ Error handling text message:', {
+      error: error.message,
+      stack: error.stack,
+      senderPhone,
+    })
+
+    await sendWhatsAppMessage(senderPhone, FALLBACK_REPLY)
   }
-
-  await saveMessage(conversationId, 'assistant', reply)
-  await sendWhatsAppMessage(senderPhone, reply)
-
-  console.log('✅ Text message processed successfully:', {
-    senderPhone,
-    conversationId,
-    replyLength: reply.length,
-  })
 }
 
