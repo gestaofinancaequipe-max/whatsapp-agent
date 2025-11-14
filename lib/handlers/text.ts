@@ -37,7 +37,7 @@ export async function handleTextMessage({
       })
       intentResult = {
         intent: conversationContext.lastIntent,
-+confidence: intentResult.confidence,
+        confidence: intentResult.confidence,
         matchedPattern: 'context_fallback',
       }
     }
