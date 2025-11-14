@@ -1,7 +1,7 @@
-import { createClient } from '@supabase/supabase-js'
+import { createClient, SupabaseClient } from '@supabase/supabase-js'
 
 // Inicializar cliente Supabase
-function getSupabaseClient() {
+export function getSupabaseClient(): SupabaseClient | null {
   const supabaseUrl = process.env.SUPABASE_URL
   const supabaseAnonKey = process.env.SUPABASE_ANON_KEY
 
@@ -168,7 +168,8 @@ export async function getConversationHistory(
 export async function saveMessage(
   conversationId: string,
   role: 'user' | 'assistant',
-  content: string
+  content: string,
+  intent?: string
 ): Promise<void> {
   try {
     const supabase = getSupabaseClient()
@@ -187,6 +188,7 @@ export async function saveMessage(
       conversation_id: conversationId,
       role,
       content,
+      intent,
     })
 
     if (insertError) {

@@ -1,7 +1,12 @@
-import { getOrCreateConversation, saveMessage } from '@/lib/services/supabase'
+import { getOrCreateConversation } from '@/lib/services/supabase'
 import { sendWhatsAppMessage } from '@/lib/whatsapp'
 import { classifyIntent } from '@/lib/processors/intent-classifier'
-import { generateMockResponse } from '@/lib/handlers/response-handler'
+import { getOrCreateUserByPhone } from '@/lib/services/users'
+import {
+  recordAssistantMessage,
+  recordUserMessage,
+} from '@/lib/services/messages'
+import { handleIntent } from '@/lib/intent-handlers'
 
 interface TextHandlerParams {
   senderPhone: string
@@ -21,10 +26,22 @@ export async function handleTextMessage({
 
   try {
     const conversationId = await getOrCreateConversation(senderPhone)
-    await saveMessage(conversationId, 'user', userMessageForHistory)
+    const user = await getOrCreateUserByPhone(senderPhone)
 
     const intentResult = classifyIntent(text)
-    const reply = generateMockResponse(intentResult.intent, text)
+    await recordUserMessage({
+      conversationId,
+      content: userMessageForHistory,
+      intent: intentResult.intent,
+      user: user || undefined,
+    })
+
+    const reply = await handleIntent({
+      intentResult,
+      messageText: text,
+      user: user || undefined,
+      conversationId,
+    })
 
     console.log('✅ Response generated for intent:', {
       intent: intentResult.intent,
@@ -32,7 +49,12 @@ export async function handleTextMessage({
       senderPhone,
     })
 
-    await saveMessage(conversationId, 'assistant', reply)
+    await recordAssistantMessage({
+      conversationId,
+      content: reply,
+      intent: intentResult.intent,
+      user: user || undefined,
+    })
     await sendWhatsAppMessage(senderPhone, reply)
 
     console.log('✅ Text message processed successfully:', {
