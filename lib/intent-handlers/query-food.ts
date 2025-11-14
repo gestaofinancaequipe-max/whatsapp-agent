@@ -1,6 +1,7 @@
 import { IntentContext } from '@/lib/intent-handlers/types'
 import { findFoodItem } from '@/lib/services/food'
 import { logFoodFallback } from '@/lib/services/fallback-log'
+import { extractFoodNameFromQuestion } from '@/lib/utils/text'
 
 function formatMacroLine(label: string, value: number | null) {
   if (value === null || value === undefined) return `${label}: 0 g`
@@ -10,26 +11,36 @@ function formatMacroLine(label: string, value: number | null) {
 export async function handleQueryFoodIntent(
   context: IntentContext
 ): Promise<string> {
-  const query = context.messageText.trim()
-  if (!query) {
+  const queryOriginal = context.messageText.trim()
+  if (!queryOriginal) {
     return '🍽️ Qual alimento você quer analisar?'
   }
 
-  const food = await findFoodItem(query)
+  const foodQuery = extractFoodNameFromQuestion(queryOriginal)
   console.log('🍽️ Food intent lookup:', {
-    query,
+    queryOriginal,
+    foodQuery,
+  })
+
+  const food = await findFoodItem(foodQuery)
+  console.log('🍽️ Food intent lookup:', {
+    queryOriginal,
+    foodQuery,
     found: !!food,
     foodId: food?.id,
     serving: food?.serving_size,
   })
 
   if (!food) {
-    console.log('⚠️ Food not found, logging fallback:', { query })
+    console.log('⚠️ Food not found, logging fallback:', {
+      queryOriginal,
+      foodQuery,
+    })
     await logFoodFallback({
-      query,
+      query: foodQuery,
       phoneNumber: context.user?.phone_number || 'unknown',
     })
-    return `🤔 Ainda não tenho dados sobre "${query}". Vou pesquisar e te aviso quando estiver disponível.`
+    return `🤔 Ainda não tenho dados sobre "${foodQuery}". Vou pesquisar e te aviso quando estiver disponível.`
   }
 
   const response = [
