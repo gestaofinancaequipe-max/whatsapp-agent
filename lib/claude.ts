@@ -54,13 +54,13 @@ export async function processMessageWithClaude(
     })
 
     console.log('📨 Sending to Groq:', {
-      model: 'llama-3.1-70b-versatile',
+      model: 'llama-3.3-70b-versatile',
       messageCount: messages.length,
       totalMessages: messages.length + 1, // +1 para system message
     })
 
     const response = await groq.chat.completions.create({
-      model: 'llama-3.1-70b-versatile',
+      model: 'llama-3.3-70b-versatile',
       messages: [
         {
           role: 'system',
