@@ -94,3 +94,35 @@ export async function updateDailySummary(
   }
 }
 
+export async function getSummariesInRange(
+  userId: string,
+  startDate: string,
+  endDate: string
+): Promise<DailySummary[]> {
+  const supabase = getSupabaseClient()
+  if (!supabase) return []
+
+  try {
+    const { data, error } = await supabase
+      .from('daily_summaries')
+      .select('*')
+      .eq('user_id', userId)
+      .gte('date', startDate)
+      .lte('date', endDate)
+      .order('date', { ascending: true })
+
+    if (error) {
+      console.error('❌ Error fetching summaries range:', error)
+      throw error
+    }
+
+    return data || []
+  } catch (error: any) {
+    console.error('❌ getSummariesInRange failed:', {
+      error: error.message,
+      userId,
+    })
+    return []
+  }
+}
+

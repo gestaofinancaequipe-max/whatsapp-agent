@@ -1,0 +1,39 @@
+import { IntentContext } from '@/lib/intent-handlers/types'
+import { findFoodItem } from '@/lib/services/food'
+import { logFoodFallback } from '@/lib/services/fallback-log'
+
+function formatMacroLine(label: string, value: number | null) {
+  if (value === null || value === undefined) return `${label}: 0 g`
+  return `${label}: ${value.toFixed(1)} g`
+}
+
+export async function handleQueryFoodIntent(
+  context: IntentContext
+): Promise<string> {
+  const query = context.messageText.trim()
+  if (!query) {
+    return '🍽️ Qual alimento você quer analisar?'
+  }
+
+  const food = await findFoodItem(query)
+  if (!food) {
+    await logFoodFallback({
+      query,
+      phoneNumber: context.user?.phone_number || 'unknown',
+    })
+    return `🤔 Ainda não tenho dados sobre "${query}". Vou pesquisar e te aviso quando estiver disponível.`
+  }
+
+  const response = [
+    `🍽️ ${food.name} (${food.serving_size || 'porção padrão'})`,
+    `• ${food.calories} kcal`,
+    `• ${formatMacroLine('Proteína', food.protein_g)}`,
+    `• ${formatMacroLine('Carboidratos', food.carbs_g)}`,
+    `• ${formatMacroLine('Gorduras', food.fat_g)}`,
+    '',
+    'Quer registrar? 1️⃣ Sim | 2️⃣ Não',
+  ]
+
+  return response.join('\n')
+}
+

@@ -1,5 +1,6 @@
 import { getSupabaseClient } from '@/lib/services/supabase'
 import { getOrCreateDailySummary } from '@/lib/services/daily-summaries'
+import { updateUserStreaks } from '@/lib/services/gamification'
 
 export interface MealRecord {
   id: string
@@ -61,6 +62,8 @@ export async function createPendingMeal({
     console.error('❌ Error creating pending meal:', error)
     return null
   }
+
+  await updateUserStreaks(userId)
 
   return data as MealRecord
 }
