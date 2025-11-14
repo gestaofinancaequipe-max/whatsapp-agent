@@ -184,12 +184,15 @@ export async function saveMessage(
     })
 
     // Inserir mensagem
-    const { error: insertError } = await supabase.from('messages').insert({
+    const messagePayload: Record<string, any> = {
       conversation_id: conversationId,
       role,
       content,
-      intent,
-    })
+    }
+
+    const { error: insertError } = await supabase
+      .from('messages')
+      .insert(messagePayload)
 
     if (insertError) {
       console.error('❌ Error saving message:', insertError)
