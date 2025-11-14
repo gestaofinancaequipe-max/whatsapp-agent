@@ -3,6 +3,8 @@ import { findFoodItem, incrementFoodUsage } from '@/lib/services/food'
 import { logFoodFallback } from '@/lib/services/fallback-log'
 import { createPendingMeal } from '@/lib/services/meals'
 import { UserRecord } from '@/lib/services/users'
+import { extractFoodWithLLM } from '@/lib/services/food-parser'
+import { sanitizeFoodQuery } from '@/lib/utils/text'
 
 interface ParsedMealRequest {
   quantity: number
@@ -128,12 +130,26 @@ export async function handleLogFoodIntent(
     return '❌ Não encontrei seu perfil ainda. Digite "ajuda" para iniciar o cadastro.'
   }
 
+  const llmResult = await extractFoodWithLLM(context.messageText)
   const parsed = parseMealRequest(context.messageText)
   if (!parsed.foodQuery) {
     return '🔍 Não entendi o alimento que você comeu. Pode descrever novamente?'
   }
 
-  const food = await findFoodItem(parsed.foodQuery)
+  const foodQuery = sanitizeFoodQuery(
+    llmResult.food && llmResult.food !== 'UNKNOWN'
+      ? llmResult.food
+      : parsed.foodQuery
+  )
+
+  console.log('🍽️ Log food extracted query:', {
+    original: context.messageText,
+    llmFood: llmResult.food,
+    regexFood: parsed.foodQuery,
+    finalQuery: foodQuery,
+  })
+
+  const food = await findFoodItem(foodQuery)
 
   if (!food) {
     await logFoodFallback({
@@ -143,11 +159,17 @@ export async function handleLogFoodIntent(
     return `🤔 Ainda não conheço "${parsed.foodQuery}". Vou pesquisar e te aviso. Pode tentar com outro alimento por enquanto.`
   }
 
-  const grams = extractMeasureInGrams(food, parsed.quantity, parsed.unit)
+  const quantityValue =
+    llmResult.quantity_value && llmResult.quantity_value > 0
+      ? llmResult.quantity_value
+      : parsed.quantity
+  const quantityUnit = llmResult.quantity_unit || parsed.unit
+
+  const grams = extractMeasureInGrams(food, quantityValue, quantityUnit)
   const ratio =
     grams && food.serving_size_grams
       ? grams / food.serving_size_grams
-      : parsed.quantity || 1
+      : quantityValue || 1
 
   const calories = (food.calories || 0) * (ratio || 1)
   const protein = (food.protein_g || 0) * (ratio || 1)
@@ -155,8 +177,8 @@ export async function handleLogFoodIntent(
   const fat = food.fat_g ? food.fat_g * (ratio || 1) : null
   const fiber = food.fiber_g ? food.fiber_g * (ratio || 1) : null
 
-  const mealDescription = `${parsed.quantity} ${
-    parsed.unit || 'porção'
+  const mealDescription = `${quantityValue} ${
+    quantityUnit || 'porção'
   } de ${food.name}`
 
   await createPendingMeal({
@@ -168,8 +190,8 @@ export async function handleLogFoodIntent(
     fat,
     fiber,
     originalEstimate: {
-      quantity: parsed.quantity,
-      unit: parsed.unit,
+      quantity: quantityValue,
+      unit: quantityUnit,
       grams,
       source_food_id: food.id,
     },

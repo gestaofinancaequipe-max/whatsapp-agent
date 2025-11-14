@@ -2,6 +2,7 @@ import { IntentContext } from '@/lib/intent-handlers/types'
 import { findFoodItem } from '@/lib/services/food'
 import { logFoodFallback } from '@/lib/services/fallback-log'
 import { extractFoodNameFromQuestion } from '@/lib/utils/text'
+import { extractFoodWithLLM } from '@/lib/services/food-parser'
 
 function formatMacroLine(label: string, value: number | null) {
   if (value === null || value === undefined) return `${label}: 0 g`
@@ -16,9 +17,17 @@ export async function handleQueryFoodIntent(
     return '🍽️ Qual alimento você quer analisar?'
   }
 
-  const foodQuery = extractFoodNameFromQuestion(queryOriginal)
+  const llmResult = await extractFoodWithLLM(queryOriginal)
+  const fallbackQuery = extractFoodNameFromQuestion(queryOriginal)
+  const foodQuery =
+    llmResult.food && llmResult.food !== 'UNKNOWN'
+      ? llmResult.food
+      : fallbackQuery
+
   console.log('🍽️ Food intent lookup:', {
     queryOriginal,
+    llmFood: llmResult.food,
+    fallbackQuery,
     foodQuery,
   })
 
