@@ -7,6 +7,7 @@ export type IntentType =
   | 'query_food_info'
   | 'daily_summary'
   | 'summary_week'
+  | 'update_user_data'
   | 'update_goal'
   | 'unknown'
 
