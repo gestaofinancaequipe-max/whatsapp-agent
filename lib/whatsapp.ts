@@ -1,5 +1,10 @@
 import axios from 'axios'
-import { WhatsAppMessage } from '@/lib/types/WhatsAppMessage'
+import {
+  WhatsAppMessage,
+  isAudioMessage,
+  isImageMessage,
+  isTextMessage,
+} from '@/lib/types/WhatsAppMessage'
 
 // Interface para a estrutura completa do webhook payload
 interface WebhookPayload {
@@ -186,26 +191,63 @@ export function extractMessage(body: WebhookPayload): WhatsAppMessage | null {
       if (messages && messages.length > 0) {
         const message = messages[0]
 
-        const extractedMessage: WhatsAppMessage = {
+        const baseMessage = {
           from: message.from,
           id: message.id,
           timestamp: message.timestamp,
           type: message.type,
-          text: message.text,
-          image: message.image,
-          audio: message.audio,
         }
+
+        let extractedMessage: WhatsAppMessage = baseMessage
+
+        if (message.type === 'text' && message.text) {
+          extractedMessage = {
+            ...baseMessage,
+            type: 'text',
+            text: message.text,
+          }
+        } else if (message.type === 'image' && message.image) {
+          extractedMessage = {
+            ...baseMessage,
+            type: 'image',
+            image: message.image,
+          }
+        } else if (message.type === 'audio' && message.audio) {
+          extractedMessage = {
+            ...baseMessage,
+            type: 'audio',
+            audio: message.audio,
+          }
+        }
+
+        const textPreview = isTextMessage(extractedMessage)
+          ? extractedMessage.text.body.substring(0, 50)
+          : undefined
+        const imageId = isImageMessage(extractedMessage)
+          ? extractedMessage.image.id
+          : undefined
+        const imageCaption =
+          isImageMessage(extractedMessage) && extractedMessage.image.caption
+            ? extractedMessage.image.caption.substring(0, 50)
+            : undefined
+        const audioId = isAudioMessage(extractedMessage)
+          ? extractedMessage.audio.id
+          : undefined
+
+        const hasText = !!textPreview
+        const hasImage = !!imageId
+        const hasAudio = !!audioId
 
         console.log('📥 Extracted message:', {
           from: extractedMessage.from,
           type: extractedMessage.type,
-          hasText: !!extractedMessage.text,
-          hasImage: !!extractedMessage.image,
-          hasAudio: !!extractedMessage.audio,
-          textPreview: extractedMessage.text?.body?.substring(0, 50),
-          imageId: extractedMessage.image?.id,
-          audioId: extractedMessage.audio?.id,
-          imageCaption: extractedMessage.image?.caption?.substring(0, 50),
+          hasText,
+          hasImage,
+          hasAudio,
+          textPreview,
+          imageId,
+          audioId,
+          imageCaption,
         })
 
         return extractedMessage
