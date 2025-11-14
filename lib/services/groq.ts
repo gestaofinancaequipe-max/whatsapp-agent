@@ -1,5 +1,6 @@
 import Groq from 'groq-sdk'
 import axios from 'axios'
+import FormData from 'form-data'
 
 // Inicializar cliente Groq
 function getGroqClient() {
@@ -125,11 +126,6 @@ export async function transcribeAudioWithGroq(
   audioUrl: string
 ): Promise<string> {
   try {
-    const groq = getGroqClient()
-    if (!groq) {
-      throw new Error('Groq client not initialized')
-    }
-
     console.log('🎤 Transcribing audio with Groq...', {
       audioUrl: audioUrl.substring(0, 100),
     })
@@ -194,6 +190,101 @@ export async function transcribeAudioWithGroq(
     })
 
     return ''
+  }
+}
+
+/**
+ * Processa mensagem de texto usando Groq LLM (substitui Claude)
+ * @param message Texto recebido do usuário
+ * @param conversationHistory Histórico opcional de mensagens [{role, content}]
+ * @returns Resposta gerada pelo Groq ou mensagem de fallback
+ */
+export async function processTextWithGroq(
+  message: string,
+  conversationHistory?: Array<{ role: string; content: string }>
+): Promise<string> {
+  try {
+    console.log('🤖 Processing text with Groq...', {
+      messageLength: message.length,
+      hasHistory: !!conversationHistory,
+      historyLength: conversationHistory?.length || 0,
+    })
+
+    const groqApiKey = process.env.GROQ_API_KEY
+
+    if (!groqApiKey) {
+      console.error('❌ GROQ_API_KEY not configured')
+      return 'Desculpe, configuração pendente. Tente novamente mais tarde.'
+    }
+
+    const messages: Array<{ role: string; content: string }> = []
+
+    // System prompt
+    messages.push({
+      role: 'system',
+      content: `Você é um assistente prestativo e amigável via WhatsApp.
+Responda de forma concisa e direta.
+Use emojis quando apropriado.
+Seja educado e útil.`,
+    })
+
+    // Histórico
+    if (conversationHistory && conversationHistory.length > 0) {
+      messages.push(...conversationHistory)
+    }
+
+    // Mensagem atual
+    messages.push({
+      role: 'user',
+      content: message,
+    })
+
+    const response = await fetch(
+      'https://api.groq.com/openai/v1/chat/completions',
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${groqApiKey}`,
+        },
+        body: JSON.stringify({
+          model: 'llama-3.3-70b-versatile',
+          messages,
+          temperature: 0.7,
+          max_tokens: 500,
+        }),
+      }
+    )
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}))
+      console.error('❌ Groq API error:', {
+        status: response.status,
+        error: errorData,
+      })
+      return 'Desculpe, tive um problema ao processar. Tente novamente.'
+    }
+
+    const data = await response.json()
+    const reply = data.choices?.[0]?.message?.content
+
+    if (!reply) {
+      console.error('❌ No response from Groq')
+      return 'Desculpe, não consegui gerar uma resposta.'
+    }
+
+    console.log('✅ Groq response generated:', {
+      replyLength: reply.length,
+      tokensUsed: data.usage?.total_tokens || 'unknown',
+    })
+
+    return reply.trim()
+  } catch (error: any) {
+    console.error('❌ Error in processTextWithGroq:', {
+      error: error.message,
+      stack: error.stack,
+    })
+    return 'Desculpe, tive um erro ao processar. Tente novamente.'
   }
 }
 

@@ -1,28 +1,5 @@
 import axios from 'axios'
-
-// Interface para mensagens do WhatsApp recebidas via webhook
-export interface WhatsAppMessage {
-  from: string
-  id: string
-  timestamp: string
-  text?: {
-    body: string
-  }
-  image?: {
-    id: string
-    mime_type?: string
-    sha256?: string
-    caption?: string
-    url?: string
-  }
-  audio?: {
-    id: string
-    mime_type?: string
-    sha256?: string
-    url?: string
-  }
-  type: string
-}
+import { WhatsAppMessage } from '@/lib/types/WhatsAppMessage'
 
 // Interface para a estrutura completa do webhook payload
 interface WebhookPayload {

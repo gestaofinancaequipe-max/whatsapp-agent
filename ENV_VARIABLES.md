@@ -8,6 +8,7 @@ Este documento lista todas as variáveis de ambiente necessárias para o projeto
 WHATSAPP_TOKEN=your_permanent_token_here
 WHATSAPP_PHONE_NUMBER_ID=896106376916223
 WHATSAPP_BUSINESS_ACCOUNT_ID=2267097247091915
+WHATSAPP_API_VERSION=v21.0
 ```
 
 ### Como obter:
@@ -44,6 +45,7 @@ GROQ_API_KEY=your_groq_api_key_here
 ```env
 SUPABASE_URL=your_supabase_project_url
 SUPABASE_ANON_KEY=your_supabase_anon_key
+SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key
 ```
 
 ### Como obter:
@@ -83,6 +85,7 @@ Crie um arquivo `.env.local` na raiz do projeto com todas as variáveis acima:
 WHATSAPP_TOKEN=your_permanent_token_here
 WHATSAPP_PHONE_NUMBER_ID=896106376916223
 WHATSAPP_BUSINESS_ACCOUNT_ID=2267097247091915
+WHATSAPP_API_VERSION=v21.0
 
 # Webhook Verification Token
 WEBHOOK_VERIFY_TOKEN=seu_token_secreto_random_string
@@ -93,6 +96,7 @@ GROQ_API_KEY=your_groq_api_key_here
 # Supabase Configuration
 SUPABASE_URL=your_supabase_project_url
 SUPABASE_ANON_KEY=your_supabase_anon_key
+SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key
 ```
 
 ## Importante
