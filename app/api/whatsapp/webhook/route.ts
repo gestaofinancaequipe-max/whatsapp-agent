@@ -6,6 +6,10 @@ import {
   getConversationHistory,
   saveMessage,
 } from '@/lib/supabase'
+import {
+  processImageWithGroq,
+  transcribeAudioWithGroq,
+} from '@/lib/groq-vision'
 
 // Forçar runtime Node.js para garantir acesso às variáveis de ambiente
 export const runtime = 'nodejs'
@@ -200,12 +204,215 @@ export async function POST(request: NextRequest) {
       from: message.from,
       type: message.type,
       text: message.text?.body?.substring(0, 100),
+      hasImage: !!message.image,
+      hasAudio: !!message.audio,
       timestamp: message.timestamp,
     })
 
+    const senderPhone = message.from
+
+    // Processar IMAGEM
+    if (message.type === 'image' && message.image) {
+      console.log('📸 Image message received')
+
+      if (!hasCredentials) {
+        console.error('❌ Cannot process image: WhatsApp credentials not configured')
+        return NextResponse.json({ success: true }, { status: 200 })
+      }
+
+      try {
+        // Obter URL da imagem via Meta API
+        // O WhatsApp envia image.id, precisamos buscar a URL
+        const imageId = message.image.id
+        const caption = message.image.caption
+
+        console.log('🔄 Fetching image URL from Meta API...', {
+          imageId,
+          hasCaption: !!caption,
+        })
+
+        // Buscar URL da imagem via Meta API
+        const phoneNumberId = whatsappPhoneNumberId
+        const token = whatsappToken
+        const mediaUrl = `https://graph.facebook.com/v21.0/${imageId}`
+
+        const mediaResponse = await fetch(mediaUrl, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        })
+
+        if (!mediaResponse.ok) {
+          throw new Error(`Failed to fetch image URL: ${mediaResponse.status}`)
+        }
+
+        const mediaData = await mediaResponse.json()
+        const imageUrl = mediaData.url
+
+        if (!imageUrl) {
+          console.error('❌ No image URL found in media response')
+          await sendWhatsAppMessage(
+            senderPhone,
+            'Desculpe, não consegui acessar a imagem. Tente enviar novamente!'
+          )
+          return NextResponse.json({ success: true }, { status: 200 })
+        }
+
+        console.log('✅ Image URL obtained:', {
+          imageUrl: imageUrl.substring(0, 100),
+        })
+
+        // Processar imagem com Groq Vision
+        console.log('🔄 Processing image with Groq Vision...')
+        const reply = await processImageWithGroq(imageUrl, caption)
+
+        if (!reply) {
+          await sendWhatsAppMessage(
+            senderPhone,
+            'Desculpe, tive problema ao analisar a foto. Tente descrever por texto!'
+          )
+          return NextResponse.json({ success: true }, { status: 200 })
+        }
+
+        // Salvar no histórico
+        try {
+          const conversationId = await getOrCreateConversation(senderPhone)
+          const captionText = caption || '[Foto enviada]'
+          await saveMessage(conversationId, 'user', `📸 ${captionText}`)
+          await saveMessage(conversationId, 'assistant', reply)
+        } catch (historyError) {
+          console.error('⚠️ Error saving image to history:', historyError)
+          // Continua mesmo se falhar histórico
+        }
+
+        // Enviar resposta
+        await sendWhatsAppMessage(senderPhone, reply)
+        console.log('✅ Image processed and response sent')
+
+        return NextResponse.json({ success: true }, { status: 200 })
+      } catch (error: any) {
+        console.error('❌ Error processing image:', {
+          error: error.message,
+          stack: error.stack,
+        })
+        await sendWhatsAppMessage(
+          senderPhone,
+          'Desculpe, tive problema ao analisar a foto. Tente descrever por texto!'
+        )
+        return NextResponse.json({ success: true }, { status: 200 })
+      }
+    }
+
+    // Processar ÁUDIO
+    if (message.type === 'audio' && message.audio) {
+      console.log('🎤 Audio message received')
+
+      if (!hasCredentials) {
+        console.error('❌ Cannot process audio: WhatsApp credentials not configured')
+        return NextResponse.json({ success: true }, { status: 200 })
+      }
+
+      try {
+        // Obter URL do áudio via Meta API
+        const audioId = message.audio.id
+
+        console.log('🔄 Fetching audio URL from Meta API...', {
+          audioId,
+        })
+
+        // Buscar URL do áudio via Meta API
+        const phoneNumberId = whatsappPhoneNumberId
+        const token = whatsappToken
+        const mediaUrl = `https://graph.facebook.com/v21.0/${audioId}`
+
+        const mediaResponse = await fetch(mediaUrl, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        })
+
+        if (!mediaResponse.ok) {
+          throw new Error(`Failed to fetch audio URL: ${mediaResponse.status}`)
+        }
+
+        const mediaData = await mediaResponse.json()
+        const audioUrl = mediaData.url
+
+        if (!audioUrl) {
+          console.error('❌ No audio URL found in media response')
+          await sendWhatsAppMessage(
+            senderPhone,
+            'Não consegui acessar o áudio. Pode repetir?'
+          )
+          return NextResponse.json({ success: true }, { status: 200 })
+        }
+
+        console.log('✅ Audio URL obtained:', {
+          audioUrl: audioUrl.substring(0, 100),
+        })
+
+        // Transcrever áudio
+        console.log('🔄 Transcribing audio...')
+        const transcription = await transcribeAudioWithGroq(audioUrl)
+
+        if (!transcription || transcription.trim() === '') {
+          await sendWhatsAppMessage(
+            senderPhone,
+            'Não consegui entender o áudio. Pode repetir ou escrever?'
+          )
+          return NextResponse.json({ success: true }, { status: 200 })
+        }
+
+        console.log('✅ Audio transcribed:', {
+          transcription: transcription.substring(0, 100),
+        })
+
+        // Processar texto transcrito como mensagem normal (com histórico)
+        try {
+          const conversationId = await getOrCreateConversation(senderPhone)
+          const history = await getConversationHistory(conversationId, 10)
+
+          await saveMessage(conversationId, 'user', `🎤 ${transcription}`)
+
+          let reply = await processMessageWithClaude(transcription, history)
+
+          if (!reply) {
+            reply = 'Desculpe, não entendi. Pode repetir?'
+          }
+
+          await saveMessage(conversationId, 'assistant', reply)
+          await sendWhatsAppMessage(senderPhone, reply)
+
+          console.log('✅ Audio processed successfully')
+        } catch (historyError: any) {
+          console.error('⚠️ Error in conversation flow for audio:', historyError)
+
+          // Fallback sem histórico
+          let reply = await processMessageWithClaude(transcription)
+
+          if (!reply) {
+            reply = 'Desculpe, não entendi. Pode repetir?'
+          }
+
+          await sendWhatsAppMessage(senderPhone, reply)
+        }
+
+        return NextResponse.json({ success: true }, { status: 200 })
+      } catch (error: any) {
+        console.error('❌ Error processing audio:', {
+          error: error.message,
+          stack: error.stack,
+        })
+        await sendWhatsAppMessage(
+          senderPhone,
+          'Desculpe, tive problema com o áudio. Pode escrever?'
+        )
+        return NextResponse.json({ success: true }, { status: 200 })
+      }
+    }
+
     // Processar apenas mensagens de texto
     if (message.type === 'text' && message.text?.body) {
-      const senderPhone = message.from
       const receivedText = message.text.body
 
       console.log('📝 Processing text message:', {

@@ -8,6 +8,19 @@ export interface WhatsAppMessage {
   text?: {
     body: string
   }
+  image?: {
+    id: string
+    mime_type?: string
+    sha256?: string
+    caption?: string
+    url?: string
+  }
+  audio?: {
+    id: string
+    mime_type?: string
+    sha256?: string
+    url?: string
+  }
   type: string
 }
 
@@ -23,6 +36,17 @@ interface WebhookPayload {
           type: string
           text?: {
             body: string
+          }
+          image?: {
+            id: string
+            mime_type?: string
+            sha256?: string
+            caption?: string
+          }
+          audio?: {
+            id: string
+            mime_type?: string
+            sha256?: string
           }
         }>
         statuses?: Array<{
@@ -191,13 +215,20 @@ export function extractMessage(body: WebhookPayload): WhatsAppMessage | null {
           timestamp: message.timestamp,
           type: message.type,
           text: message.text,
+          image: message.image,
+          audio: message.audio,
         }
 
         console.log('📥 Extracted message:', {
           from: extractedMessage.from,
           type: extractedMessage.type,
           hasText: !!extractedMessage.text,
+          hasImage: !!extractedMessage.image,
+          hasAudio: !!extractedMessage.audio,
           textPreview: extractedMessage.text?.body?.substring(0, 50),
+          imageId: extractedMessage.image?.id,
+          audioId: extractedMessage.audio?.id,
+          imageCaption: extractedMessage.image?.caption?.substring(0, 50),
         })
 
         return extractedMessage
