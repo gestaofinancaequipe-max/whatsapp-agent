@@ -195,7 +195,23 @@ export async function POST(request: NextRequest) {
     const message = extractMessage(body)
 
     if (!message) {
-      console.log('⚠️ No valid message extracted, returning 200 to prevent retries')
+      const firstEntry = body.entry?.[0]
+      const firstChange = firstEntry?.changes?.[0]
+      const value = firstChange?.value
+      console.log('⚠️ No valid message extracted, returning 200 to prevent retries', {
+        hasEntry: !!firstEntry,
+        hasChange: !!firstChange,
+        valueKeys: value ? Object.keys(value) : [],
+        messagesCount: value?.messages?.length || 0,
+        statusesCount: value?.statuses?.length || 0,
+        statusesPreview: value?.statuses
+          ? value.statuses.map((status: any) => ({
+              id: status.id,
+              status: status.status,
+              recipient_id: status.recipient_id,
+            }))
+          : [],
+      })
       return NextResponse.json({ success: true }, { status: 200 })
     }
 
@@ -224,13 +240,31 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ success: true }, { status: 200 })
       }
 
-      await handleImageMessage({
+      console.log('🚚 Routing image message to handler...', {
         senderPhone,
         imageId: message.image.id,
-        caption: message.image.caption,
-        whatsappToken,
-        apiVersion,
+        hasCaption: !!message.image.caption,
       })
+
+      try {
+        await handleImageMessage({
+          senderPhone,
+          imageId: message.image.id,
+          caption: message.image.caption,
+          whatsappToken,
+          apiVersion,
+        })
+        console.log('✅ Image handler completed', {
+          senderPhone,
+          imageId: message.image.id,
+        })
+      } catch (imageError: any) {
+        console.error('❌ Image handler failed', {
+          error: imageError.message,
+          stack: imageError.stack,
+          senderPhone,
+        })
+      }
 
       return NextResponse.json({ success: true }, { status: 200 })
     }
@@ -241,12 +275,29 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ success: true }, { status: 200 })
       }
 
-      await handleAudioMessage({
+      console.log('🚚 Routing audio message to handler...', {
         senderPhone,
         audioId: message.audio.id,
-        whatsappToken,
-        apiVersion,
       })
+
+      try {
+        await handleAudioMessage({
+          senderPhone,
+          audioId: message.audio.id,
+          whatsappToken,
+          apiVersion,
+        })
+        console.log('✅ Audio handler completed', {
+          senderPhone,
+          audioId: message.audio.id,
+        })
+      } catch (audioError: any) {
+        console.error('❌ Audio handler failed', {
+          error: audioError.message,
+          stack: audioError.stack,
+          senderPhone,
+        })
+      }
 
       return NextResponse.json({ success: true }, { status: 200 })
     }
@@ -257,16 +308,34 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ success: true }, { status: 200 })
       }
 
-      await handleTextMessage({
+      console.log('🚚 Routing text message to handler...', {
         senderPhone,
-        text: message.text.body,
+        textPreview: message.text.body.substring(0, 80),
       })
+
+      try {
+        await handleTextMessage({
+          senderPhone,
+          text: message.text.body,
+        })
+        console.log('✅ Text handler completed', {
+          senderPhone,
+        })
+      } catch (textError: any) {
+        console.error('❌ Text handler failed', {
+          error: textError.message,
+          stack: textError.stack,
+          senderPhone,
+        })
+      }
 
       return NextResponse.json({ success: true }, { status: 200 })
     }
 
     console.log('ℹ️ Unsupported message type, skipping auto-reply:', {
       type: message.type,
+      rawKeys: Object.keys(message),
+      messagePreview: JSON.stringify(message).substring(0, 200),
     })
 
     return NextResponse.json({ success: true }, { status: 200 })
