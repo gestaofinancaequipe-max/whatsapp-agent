@@ -26,17 +26,18 @@ WEBHOOK_VERIFY_TOKEN=seu_token_secreto_random_string
 - Use uma string aleatória e segura
 - Configure o mesmo token no Meta for Developers
 
-## Configuração do Anthropic (Claude API)
+## Configuração do Groq API
 
 ```env
-ANTHROPIC_API_KEY=your_anthropic_api_key_here
+GROQ_API_KEY=your_groq_api_key_here
 ```
 
 ### Como obter:
-1. Acesse: https://console.anthropic.com/
-2. Vá em "API Keys"
-3. Crie uma nova chave ou copie uma existente
-4. Adicione créditos em "Plans & Billing"
+1. Acesse: https://console.groq.com/
+2. Faça login ou crie uma conta
+3. Vá em "API Keys"
+4. Crie uma nova chave ou copie uma existente
+5. A Groq oferece free tier generoso
 
 ## Configuração do Supabase
 
@@ -86,8 +87,8 @@ WHATSAPP_BUSINESS_ACCOUNT_ID=2267097247091915
 # Webhook Verification Token
 WEBHOOK_VERIFY_TOKEN=seu_token_secreto_random_string
 
-# Anthropic API Key
-ANTHROPIC_API_KEY=your_anthropic_api_key_here
+# Groq API Key
+GROQ_API_KEY=your_groq_api_key_here
 
 # Supabase Configuration
 SUPABASE_URL=your_supabase_project_url

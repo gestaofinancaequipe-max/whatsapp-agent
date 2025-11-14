@@ -9,12 +9,12 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.39.0",
+    "axios": "^1.6.0",
+    "groq-sdk": "^0.7.0",
     "next": "^14.0.0",
     "react": "^18.2.0",
-    "react-dom": "^18.2.0",
-    "axios": "^1.6.0",
-    "@anthropic-ai/sdk": "^0.24.0",
-    "@supabase/supabase-js": "^2.39.0"
+    "react-dom": "^18.2.0"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
@@ -26,5 +26,3 @@
     "typescript": "^5.2.2"
   }
 }
-
-
