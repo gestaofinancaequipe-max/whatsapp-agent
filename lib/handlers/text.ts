@@ -1,4 +1,4 @@
-import { getOrCreateConversation } from '@/lib/services/supabase'
+import { getConversationHistory, getOrCreateConversation } from '@/lib/services/supabase'
 import { sendWhatsAppMessage } from '@/lib/whatsapp'
 import { classifyIntent } from '@/lib/processors/intent-classifier'
 import { getOrCreateUserByPhone } from '@/lib/services/users'
@@ -27,6 +27,18 @@ export async function handleTextMessage({
   try {
     const conversationId = await getOrCreateConversation(senderPhone)
     const user = await getOrCreateUserByPhone(senderPhone)
+    const historyRecords = await getConversationHistory(conversationId, 10)
+    const recentHistory = (() => {
+      if (!historyRecords.length) return []
+      const lastMessage = historyRecords[historyRecords.length - 1]
+      const lastTimestamp = new Date(lastMessage.created_at).getTime()
+      const now = Date.now()
+      const TEN_MIN_MS = 10 * 60 * 1000
+      if (now - lastTimestamp > TEN_MIN_MS) {
+        return []
+      }
+      return historyRecords.map(({ role, content }) => ({ role, content }))
+    })()
 
     const intentResult = classifyIntent(text)
     await recordUserMessage({
@@ -41,6 +53,7 @@ export async function handleTextMessage({
       messageText: text,
       user: user || undefined,
       conversationId,
+      history: recentHistory,
     })
 
     console.log('✅ Response generated for intent:', {

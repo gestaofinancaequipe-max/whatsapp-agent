@@ -103,10 +103,16 @@ export async function getOrCreateConversation(
  * @param limit Número máximo de mensagens (padrão: 10)
  * @returns Array de mensagens em ordem cronológica [{role, content}, ...]
  */
+interface ConversationMessage {
+  role: string
+  content: string
+  created_at: string
+}
+
 export async function getConversationHistory(
   conversationId: string,
   limit: number = 10
-): Promise<Array<{ role: string; content: string }>> {
+): Promise<ConversationMessage[]> {
   try {
     const supabase = getSupabaseClient()
     if (!supabase) {
@@ -121,7 +127,7 @@ export async function getConversationHistory(
     // Buscar últimas N mensagens (DESC) para depois reverter
     const { data: messages, error } = await supabase
       .from('messages')
-      .select('role, content')
+      .select('role, content, created_at')
       .eq('conversation_id', conversationId)
       .order('created_at', { ascending: false })
       .limit(limit)
@@ -148,6 +154,7 @@ export async function getConversationHistory(
     return history.map((msg) => ({
       role: msg.role,
       content: msg.content,
+      created_at: msg.created_at,
     }))
   } catch (error: any) {
     console.error('❌ Error in getConversationHistory:', {
