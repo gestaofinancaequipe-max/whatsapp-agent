@@ -1,4 +1,4 @@
-import { getConversationHistory, getOrCreateConversation } from '@/lib/services/supabase'
+import { getOrCreateConversation } from '@/lib/services/supabase'
 import { sendWhatsAppMessage } from '@/lib/whatsapp'
 import { classifyIntent } from '@/lib/processors/intent-classifier'
 import { getOrCreateUserByPhone } from '@/lib/services/users'
@@ -7,6 +7,7 @@ import {
   recordUserMessage,
 } from '@/lib/services/messages'
 import { handleIntent } from '@/lib/intent-handlers'
+import { getConversationContext } from '@/lib/services/conversation-context'
 
 interface TextHandlerParams {
   senderPhone: string
@@ -27,20 +28,19 @@ export async function handleTextMessage({
   try {
     const conversationId = await getOrCreateConversation(senderPhone)
     const user = await getOrCreateUserByPhone(senderPhone)
-    const historyRecords = await getConversationHistory(conversationId, 10)
-    const recentHistory = (() => {
-      if (!historyRecords.length) return []
-      const lastMessage = historyRecords[historyRecords.length - 1]
-      const lastTimestamp = new Date(lastMessage.created_at).getTime()
-      const now = Date.now()
-      const TEN_MIN_MS = 10 * 60 * 1000
-      if (now - lastTimestamp > TEN_MIN_MS) {
-        return []
-      }
-      return historyRecords.map(({ role, content }) => ({ role, content }))
-    })()
+    const conversationContext = await getConversationContext(conversationId)
 
-    const intentResult = classifyIntent(text)
+    let intentResult = classifyIntent(text)
+    if (intentResult.intent === 'unknown' && conversationContext.lastIntent) {
+      console.log('♻️ Reusing last intent from context:', {
+        lastIntent: conversationContext.lastIntent,
+      })
+      intentResult = {
+        intent: conversationContext.lastIntent,
++confidence: intentResult.confidence,
+        matchedPattern: 'context_fallback',
+      }
+    }
     await recordUserMessage({
       conversationId,
       content: userMessageForHistory,
@@ -53,7 +53,7 @@ export async function handleTextMessage({
       messageText: text,
       user: user || undefined,
       conversationId,
-      history: recentHistory,
+      history: conversationContext.history,
     })
 
     console.log('✅ Response generated for intent:', {

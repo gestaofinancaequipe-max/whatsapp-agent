@@ -127,7 +127,7 @@ export async function getConversationHistory(
     // Buscar últimas N mensagens (DESC) para depois reverter
     const { data: messages, error } = await supabase
       .from('messages')
-      .select('role, content, created_at')
+      .select('role, content, created_at, intent')
       .eq('conversation_id', conversationId)
       .order('created_at', { ascending: false })
       .limit(limit)
@@ -195,6 +195,10 @@ export async function saveMessage(
       conversation_id: conversationId,
       role,
       content,
+    }
+
+    if (intent) {
+      messagePayload.intent = intent
     }
 
     const { error: insertError } = await supabase

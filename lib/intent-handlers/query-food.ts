@@ -3,6 +3,7 @@ import { findFoodItem } from '@/lib/services/food'
 import { logFoodFallback } from '@/lib/services/fallback-log'
 import { extractFoodNameFromQuestion } from '@/lib/utils/text'
 import { extractFoodWithLLM } from '@/lib/services/food-parser'
+import { IntentType } from '@/lib/types/intents'
 
 function formatMacroLine(label: string, value: number | null) {
   if (value === null || value === undefined) return `${label}: 0 g`
@@ -19,10 +20,14 @@ export async function handleQueryFoodIntent(
 
   const llmResult = await extractFoodWithLLM(queryOriginal)
   const fallbackQuery = extractFoodNameFromQuestion(queryOriginal)
+  const contextFood = extractFoodFromHistory(
+    context.history,
+    context.intentResult.intent
+  )
   const foodQuery =
     llmResult.food && llmResult.food !== 'UNKNOWN'
       ? llmResult.food
-      : fallbackQuery
+      : contextFood || fallbackQuery
 
   console.log('🍽️ Food intent lookup:', {
     queryOriginal,
@@ -63,5 +68,21 @@ export async function handleQueryFoodIntent(
   ]
 
   return response.join('\n')
+}
+
+function extractFoodFromHistory(
+  history: IntentContext['history'],
+  currentIntent: IntentType
+): string | undefined {
+  if (currentIntent !== 'query_food_info') return undefined
+  const lastAssistant = [...history]
+    .reverse()
+    .find((msg) => msg.role === 'assistant' && msg.content.includes('🍽️'))
+  if (!lastAssistant) return undefined
+  const match = lastAssistant.content.match(/🍽️ (.+?) \(/)
+  if (match) {
+    return match[1]
+  }
+  return undefined
 }
 

@@ -132,19 +132,21 @@ export async function handleLogFoodIntent(
 
   const llmResult = await extractFoodWithLLM(context.messageText)
   const parsed = parseMealRequest(context.messageText)
+  const contextFood = extractFoodFromHistory(context.history)
   if (!parsed.foodQuery) {
     return '🔍 Não entendi o alimento que você comeu. Pode descrever novamente?'
   }
 
-  const foodQuery = sanitizeFoodQuery(
+  const rawFoodQuery =
     llmResult.food && llmResult.food !== 'UNKNOWN'
       ? llmResult.food
-      : parsed.foodQuery
-  )
+      : contextFood || parsed.foodQuery
+  const foodQuery = sanitizeFoodQuery(rawFoodQuery)
 
   console.log('🍽️ Log food extracted query:', {
     original: context.messageText,
     llmFood: llmResult.food,
+    contextFood,
     regexFood: parsed.foodQuery,
     finalQuery: foodQuery,
   })
@@ -153,7 +155,7 @@ export async function handleLogFoodIntent(
 
   if (!food) {
     await logFoodFallback({
-      query: parsed.foodQuery,
+      query: foodQuery,
       phoneNumber: context.user?.phone_number || 'unknown',
     })
     return `🤔 Ainda não conheço "${parsed.foodQuery}". Vou pesquisar e te aviso. Pode tentar com outro alimento por enquanto.`
@@ -207,5 +209,19 @@ export async function handleLogFoodIntent(
     fat,
     grams,
   })
+}
+
+function extractFoodFromHistory(
+  history: IntentContext['history']
+): string | undefined {
+  const lastUser = [...history]
+    .reverse()
+    .find((msg) => msg.role === 'user' && msg.intent === 'register_meal')
+  if (!lastUser) return undefined
+  const match = lastUser.content.match(/de\s+([a-zà-ú\s]+)/i)
+  if (match) {
+    return match[1].trim()
+  }
+  return undefined
 }
 
