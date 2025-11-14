@@ -1,5 +1,6 @@
 import Groq from 'groq-sdk'
 import { getFoodCatalog } from '@/lib/services/food-catalog'
+import { sanitizeFoodQuery } from '@/lib/utils/text'
 
 const groq = new Groq({
   apiKey: process.env.GROQ_API_KEY,
@@ -77,7 +78,12 @@ Retorne SEMPRE no formato JSON:
       return { food: null, quantity_value: null, quantity_unit: null }
     }
 
-    const parsed = JSON.parse(content) as FoodParseResult
+    const parsed = parseJsonResponse(content)
+    if (!parsed) {
+      console.warn('⚠️ LLM food parser returned non-JSON content:', content)
+      return { food: null, quantity_value: null, quantity_unit: null }
+    }
+
     return parsed
   } catch (error: any) {
     console.error('❌ Error extracting food with LLM:', {
@@ -85,5 +91,29 @@ Retorne SEMPRE no formato JSON:
     })
     return { food: null, quantity_value: null, quantity_unit: null }
   }
+}
+
+function parseJsonResponse(content: string): FoodParseResult | null {
+  const attempt = (text: string): FoodParseResult | null => {
+    try {
+      const parsed = JSON.parse(text) as FoodParseResult
+      if (parsed.food && parsed.food !== 'UNKNOWN') {
+        parsed.food = sanitizeFoodQuery(parsed.food)
+      }
+      return parsed
+    } catch {
+      return null
+    }
+  }
+
+  const direct = attempt(content)
+  if (direct) return direct
+
+  const match = content.match(/\{[\s\S]*\}/)
+  if (match) {
+    return attempt(match[0])
+  }
+
+  return null
 }
 
