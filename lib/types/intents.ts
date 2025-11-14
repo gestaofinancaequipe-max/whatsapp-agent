@@ -9,6 +9,7 @@ export type IntentType =
   | 'summary_week'
   | 'update_user_data'
   | 'update_goal'
+  | 'onboarding'
   | 'unknown'
 
 export interface IntentResult {
