@@ -262,7 +262,7 @@ async function handleMultipleFoods(
   const processedFoods: Array<{
     food: any
     quantity: number
-    unit: string | null
+    unit: string | undefined
     grams: number | null
     calories: number
     protein: number
@@ -288,7 +288,7 @@ async function handleMultipleFoods(
     }
 
     const quantityValue = foodItem.quantity_value || 1
-    const quantityUnit = foodItem.quantity_unit || null
+    const quantityUnit = foodItem.quantity_unit || undefined
 
     const grams = extractMeasureInGrams(food, quantityValue, quantityUnit)
     const ratio =
