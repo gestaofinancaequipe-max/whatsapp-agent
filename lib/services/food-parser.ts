@@ -51,19 +51,18 @@ export async function extractFoodWithLLM(
   const catalogText =
     catalog.length > 0 ? catalog.map((item) => `- ${item}`).join('\n') : ''
 
-  const prompt = `
-Você recebe perguntas de usuários sobre alimentos consumidos. 
-Sua tarefa é identificar TODOS os alimentos mencionados e suas quantidades.
+  const prompt = `Você é um extrator de alimentos. Identifique TODOS os alimentos mencionados e suas quantidades.
 
 Lista de alimentos conhecidos:
 ${catalogText}
 
-IMPORTANTE:
-- Se o usuário mencionar MÚLTIPLOS alimentos, retorne um ARRAY
-- Se mencionar apenas UM alimento, retorne um OBJETO
-- Se não identificar nenhum alimento da lista, responda "UNKNOWN" para o campo food
+REGRAS:
+1. Se o usuário mencionar MÚLTIPLOS alimentos, retorne um ARRAY JSON
+2. Se mencionar apenas UM alimento, retorne um OBJETO JSON
+3. Se não identificar nenhum alimento, use "UNKNOWN" para o campo food
+4. SEMPRE retorne JSON válido, nunca texto livre
 
-Unidades válidas: ${QUANTITY_UNITS.join(', ')}. Pode responder "unidade" se for singular.
+Unidades válidas: ${QUANTITY_UNITS.join(', ')}. Use "unidade" se for singular.
 
 Formato para UM alimento:
 {
@@ -73,29 +72,33 @@ Formato para UM alimento:
 }
 
 Formato para MÚLTIPLOS alimentos:
-[
-  {
-    "food": "nome_do_primeiro_alimento",
-    "quantity_value": número ou null,
-    "quantity_unit": unidade ou null
-  },
-  {
-    "food": "nome_do_segundo_alimento",
-    "quantity_value": número ou null,
-    "quantity_unit": unidade ou null
-  }
-]
+{
+  "foods": [
+    {
+      "food": "nome_do_primeiro_alimento",
+      "quantity_value": número ou null,
+      "quantity_unit": unidade ou null
+    },
+    {
+      "food": "nome_do_segundo_alimento",
+      "quantity_value": número ou null,
+      "quantity_unit": unidade ou null
+    }
+  ]
+}
 
 Exemplos:
-- "Comi 2 fatias de pizza" → { "food": "pizza", "quantity_value": 2, "quantity_unit": "fatia" }
-- "Almocei arroz, feijão e frango" → [{ "food": "arroz", ... }, { "food": "feijao", ... }, { "food": "frango", ... }]
-`
+- "Comi 2 fatias de pizza" → {"food": "pizza", "quantity_value": 2, "quantity_unit": "fatia"}
+- "Almocei arroz, feijão e frango" → {"foods": [{"food": "arroz", "quantity_value": null, "quantity_unit": null}, {"food": "feijao", "quantity_value": null, "quantity_unit": null}, {"food": "frango", "quantity_value": null, "quantity_unit": null}]}
+
+IMPORTANTE: Retorne APENAS JSON válido, sem explicações ou texto adicional.`
 
   try {
     const completion = await groq.chat.completions.create({
       model: 'llama-3.1-8b-instant',
       temperature: 0.2,
       max_tokens: 500, // Aumentado para suportar arrays
+      response_format: { type: 'json_object' }, // Forçar JSON
       messages: [
         { role: 'system', content: prompt },
         { role: 'user', content: message },
@@ -104,12 +107,16 @@ Exemplos:
 
     const content = completion.choices[0]?.message?.content
     if (!content) {
+      console.warn('⚠️ LLM food parser returned empty content')
       return null
     }
 
     const parsed = parseJsonResponse(content)
     if (!parsed) {
-      console.warn('⚠️ LLM food parser returned non-JSON content:', content)
+      console.warn('⚠️ LLM food parser returned non-JSON content:', {
+        contentPreview: content.substring(0, 200),
+        contentLength: content.length,
+      })
       return null
     }
 
@@ -117,6 +124,7 @@ Exemplos:
   } catch (error: any) {
     console.error('❌ Error extracting food with LLM:', {
       error: error.message,
+      errorType: error.constructor?.name,
     })
     return null
   }
@@ -129,7 +137,29 @@ function parseJsonResponse(
     try {
       const parsed = JSON.parse(text)
       
-      // Se for array (múltiplos alimentos)
+      // Se tiver campo "foods" (múltiplos alimentos em objeto)
+      if (parsed && typeof parsed === 'object' && 'foods' in parsed && Array.isArray(parsed.foods)) {
+        const items: FoodItem[] = parsed.foods
+          .filter((item: any) => item && typeof item === 'object')
+          .map((item: any) => ({
+            food: item.food && item.food !== 'UNKNOWN' 
+              ? sanitizeFoodQuery(item.food) 
+              : item.food || 'UNKNOWN',
+            quantity_value: item.quantity_value ?? null,
+            quantity_unit: item.quantity_unit ?? null,
+          }))
+          .filter((item: FoodItem) => item.food && item.food !== 'UNKNOWN')
+        
+        if (items.length > 0) {
+          console.log('✅ LLM extracted multiple foods (from foods array):', {
+            count: items.length,
+            foods: items.map(i => i.food),
+          })
+          return items
+        }
+      }
+      
+      // Se for array direto (múltiplos alimentos)
       if (Array.isArray(parsed)) {
         const items: FoodItem[] = parsed
           .filter((item: any) => item && typeof item === 'object')
@@ -143,7 +173,7 @@ function parseJsonResponse(
           .filter((item: FoodItem) => item.food && item.food !== 'UNKNOWN')
         
         if (items.length > 0) {
-          console.log('✅ LLM extracted multiple foods:', {
+          console.log('✅ LLM extracted multiple foods (from array):', {
             count: items.length,
             foods: items.map(i => i.food),
           })
@@ -152,7 +182,7 @@ function parseJsonResponse(
         return null
       }
       
-      // Se for objeto (um alimento)
+      // Se for objeto com campo "food" (um alimento)
       if (parsed && typeof parsed === 'object' && 'food' in parsed) {
         const result = parsed as FoodParseResult
         if (result.food && result.food !== 'UNKNOWN') {
@@ -162,7 +192,11 @@ function parseJsonResponse(
       }
       
       return null
-    } catch {
+    } catch (parseError: any) {
+      console.warn('⚠️ JSON parse error in food parser:', {
+        error: parseError.message,
+        textPreview: text.substring(0, 100),
+      })
       return null
     }
   }
