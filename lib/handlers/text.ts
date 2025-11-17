@@ -40,20 +40,17 @@ export async function handleTextMessage({
   })
 
   try {
-    const step1Start = Date.now()
-    const conversationId = await getOrCreateConversation(senderPhone)
-    console.log('✅ Step 1 - Conversation:', {
+    // Otimização: Paralelizar Step 1 e Step 2
+    const step1And2Start = Date.now()
+    const [conversationId, user] = await Promise.all([
+      getOrCreateConversation(senderPhone),
+      getOrCreateUserByPhone(senderPhone),
+    ])
+    console.log('✅ Step 1 & 2 - Conversation & User (parallelized):', {
       handlerId,
       conversationId,
-      time: Date.now() - step1Start,
-    })
-
-    const step2Start = Date.now()
-    const user = await getOrCreateUserByPhone(senderPhone)
-    console.log('✅ Step 2 - User:', {
-      handlerId,
       userId: user?.id,
-      time: Date.now() - step2Start,
+      time: Date.now() - step1And2Start,
     })
 
     // Verificar se a mensagem é confirmação/correção e buscar dados temporários
@@ -210,22 +207,18 @@ export async function handleTextMessage({
       }
     }
 
-    const step3Start = Date.now()
-    const conversationContext = await getConversationContext(conversationId)
-    console.log('✅ Step 3 - Context:', {
+    // Otimização: Paralelizar Step 3 e Step 4
+    const step3And4Start = Date.now()
+    const [conversationContext, messagesSinceLastResponse] = await Promise.all([
+      getConversationContext(conversationId),
+      getMessagesSinceLastAssistantResponse(conversationId),
+    ])
+    console.log('✅ Step 3 & 4 - Context & Messages (parallelized):', {
       handlerId,
       historyLength: conversationContext.history.length,
       lastIntent: conversationContext.lastIntent,
-      time: Date.now() - step3Start,
-    })
-
-    // Buscar todas as mensagens desde a última resposta do assistente
-    const step4Start = Date.now()
-    const messagesSinceLastResponse = await getMessagesSinceLastAssistantResponse(conversationId)
-    console.log('✅ Step 4 - Messages since last response:', {
-      handlerId,
-      count: messagesSinceLastResponse.length,
-      time: Date.now() - step4Start,
+      messageCount: messagesSinceLastResponse.length,
+      time: Date.now() - step3And4Start,
     })
 
     // Se não há mensagens anteriores, adicionar a mensagem atual
@@ -265,54 +258,38 @@ export async function handleTextMessage({
       time: Date.now() - step5Start,
     })
 
-    // Salvar mensagem do usuário
-    const step6Start = Date.now()
-    await recordUserMessage({
-      conversationId,
-      content: userMessageForHistory,
-      intent: intentResult.intent,
-      user: user || undefined,
-    })
-    console.log('✅ Step 6 - User message saved:', {
-      handlerId,
-      time: Date.now() - step6Start,
-    })
-
-    // Gerar resposta
+    // Gerar resposta (otimização: não esperar salvar mensagem do usuário)
     const step7Start = Date.now()
     console.log('💭 Step 7 - Generating reply...', { handlerId })
-    const reply = await handleIntent({
+    const replyPromise = handleIntent({
       intentResult,
       messageText: text, // Usar texto original para processamento
       user: user || undefined,
       conversationId,
       history: conversationContext.history,
     })
-    console.log('✅ Step 7 - Reply generated:', {
+
+    // Salvar mensagem do usuário em paralelo com geração de resposta
+    const step6Promise = recordUserMessage({
+      conversationId,
+      content: userMessageForHistory,
+      intent: intentResult.intent,
+      user: user || undefined,
+    })
+
+    // Aguardar ambos
+    const [reply] = await Promise.all([replyPromise, step6Promise])
+    console.log('✅ Step 6 & 7 - User message saved & Reply generated (parallelized):', {
       handlerId,
       replyLength: reply.length,
       replyPreview: reply.substring(0, 100),
       time: Date.now() - step7Start,
     })
 
-    // Salvar resposta do assistente (com dados temporários se houver)
-    const step8Start = Date.now()
-    await recordAssistantMessage({
-      conversationId,
-      content: reply, // Salvar completo (com tempData se houver)
-      intent: intentResult.intent,
-      user: user || undefined,
-    })
-    console.log('✅ Step 8 - Assistant message saved:', {
-      handlerId,
-      hasTempData: reply.includes('__TEMP_DATA_JSON__'),
-      time: Date.now() - step8Start,
-    })
-
-    // Simular delay humano antes de enviar
+    // Otimização: Delay reduzido + salvar mensagem do assistente em background
     const step9Start = Date.now()
-    console.log('⏳ Step 9 - Simulating human delay...', { handlerId })
-    await simulateHumanDelay()
+    console.log('⏳ Step 9 - Simulating human delay (reduced)...', { handlerId })
+    await simulateHumanDelay() // Delay reduzido (750-1500ms em vez de 1500-3000ms)
     console.log('✅ Step 9 - Delay completed:', {
       handlerId,
       delayTime: Date.now() - step9Start,
@@ -326,6 +303,25 @@ export async function handleTextMessage({
     console.log('✅ Step 10 - Message sent:', {
       handlerId,
       time: Date.now() - step10Start,
+    })
+
+    // Salvar resposta do assistente em background (não bloqueia resposta)
+    recordAssistantMessage({
+      conversationId,
+      content: reply, // Salvar completo (com tempData se houver)
+      intent: intentResult.intent,
+      user: user || undefined,
+    }).then(() => {
+      console.log('✅ Step 8 - Assistant message saved (background):', {
+        handlerId,
+        hasTempData: reply.includes('__TEMP_DATA_JSON__'),
+      })
+    }).catch((error) => {
+      // Não falhar se não conseguir salvar
+      console.error('⚠️ Failed to save assistant message (non-blocking):', {
+        handlerId,
+        error: error.message,
+      })
     })
 
     console.log('✅ Text message processed successfully:', {

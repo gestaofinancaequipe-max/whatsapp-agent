@@ -89,7 +89,14 @@ Intents disponíveis:
 - query_balance: consultar calorias restantes
 - query_food_info: informação nutricional
 - view_user_data: ver dados cadastrados do usuário
-- help, greeting, daily_summary, summary_week, update_user_data, update_goal, onboarding, unknown
+- update_user_data: atualizar dados pessoais (peso, altura, idade) e metas nutricionais (calorias diárias, proteína diária) - também usado para onboarding/cadastro inicial
+- help, greeting, daily_summary, summary_week, unknown
+
+IMPORTANTE - update_user_data:
+- Use para atualizar DADOS PESSOAIS (peso em kg, altura em cm, idade em anos)
+- Use para atualizar METAS NUTRICIONAIS (calorias diárias, proteína diária)
+- Também usado para onboarding/cadastro inicial quando o usuário está preenchendo seus dados pela primeira vez
+- Exemplos: "Peso 82kg", "Altura 175cm", "mudar peso para 70 quilos", "idade 30 anos", "Meta 1800 kcal", "Proteína 150g"
 
 Para register_meal:
 - Extraia lista de [alimento, quantidade] EXATAMENTE como o usuário escreveu
@@ -107,6 +114,11 @@ Para register_exercise:
   * "malhei" → [{"exercicio":"musculacao","duracao":null}]
   * "30 min de esteira e 20 min de bicicleta" → [{"exercicio":"esteira","duracao":"30 min"},{"exercicio":"bicicleta","duracao":"20 min"}]
 
+Para update_user_data:
+- Use quando o usuário quer atualizar peso, altura, idade, meta calórica ou meta de proteína
+- Exemplos: "Peso 82kg", "mudar peso para 70 quilos", "Altura 175cm", "idade 30 anos", "Meta 1800 kcal", "Proteína 150g"
+- Use também para onboarding/cadastro inicial quando o usuário está preenchendo dados pela primeira vez
+
 Retorne JSON:
 {
   "intent": "register_meal",
@@ -122,7 +134,7 @@ ${userMessages}
 
 Classifique e extraia dados.`
 
-    const timeout = parseInt(process.env.LLM_INTENT_TIMEOUT_MS || '3000', 10)
+    const timeout = parseInt(process.env.LLM_INTENT_TIMEOUT_MS || '2000', 10) // Reduzido de 3000ms para 2000ms
 
     // Criar promise com timeout
     const classificationPromise = groq.chat.completions.create({
@@ -188,8 +200,6 @@ Classifique e extraia dados.`
       'summary_week',
       'update_user_data',
       'view_user_data',
-      'update_goal',
-      'onboarding',
       'unknown',
     ]
 

@@ -1,13 +1,13 @@
 /**
  * Simula delay humano antes de responder
  * Útil para tornar as respostas mais naturais e evitar cortar mensagens conectadas
- * @param minMs Tempo mínimo em milissegundos (padrão: 1500ms)
- * @param maxMs Tempo máximo em milissegundos (padrão: 3000ms)
+ * @param minMs Tempo mínimo em milissegundos (padrão: 750ms - reduzido pela metade)
+ * @param maxMs Tempo máximo em milissegundos (padrão: 1500ms - reduzido pela metade)
  * @returns Promise que resolve após o delay
  */
 export async function simulateHumanDelay(
-  minMs: number = 1500,
-  maxMs: number = 3000
+  minMs: number = 750,
+  maxMs: number = 1500
 ): Promise<void> {
   // Permitir override via variáveis de ambiente
   const envMin = process.env.MIN_RESPONSE_DELAY_MS
@@ -28,8 +28,8 @@ export async function simulateHumanDelay(
       actualMin,
       actualMax,
     })
-    const defaultMin = 1500
-    const defaultMax = 3000
+    const defaultMin = 750
+    const defaultMax = 1500
     const delay = Math.floor(Math.random() * (defaultMax - defaultMin + 1)) + defaultMin
     console.log('⏳ Simulating human delay (default):', { delayMs: delay })
     await new Promise((resolve) => setTimeout(resolve, delay))

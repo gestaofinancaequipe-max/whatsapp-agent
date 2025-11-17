@@ -8,7 +8,7 @@ const COMMANDS = [
   { label: '🥑 Info nutricional', example: '"Calorias do abacate"' },
   { label: '👤 Ver meus dados', example: '"Meus dados" ou "Meu perfil"' },
   { label: '📈 Resumo do dia/semana', example: '"Resumo do dia" ou "Resumo da semana"' },
-  { label: '🎯 Atualizar metas/peso', example: '"Minha meta é 1800" ou "Peso 82kg"' },
+  { label: '🎯 Atualizar dados/metas', example: '"Peso 82kg", "Meta 1800 kcal" ou "Proteína 150g"' },
 ]
 
 function buildCommandsText() {

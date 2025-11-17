@@ -19,8 +19,8 @@ export function generateMockResponse(intent: IntentType, originalMessage: string
       return `🥑 [MODO TESTE] Informações nutricionais para "${originalMessage}" ainda estão em construção, mas já recebi seu pedido.`
     case 'daily_summary':
       return '📊 [MODO TESTE] Gerando resumo diário...\n\nEm breve vou consolidar suas refeições e exercícios automaticamente.'
-    case 'update_goal':
-      return '🎯 [MODO TESTE] Meta registrada! Em breve vou ajustar seus cálculos com base nesse objetivo.'
+    case 'update_user_data':
+      return '✅ [MODO TESTE] Dados atualizados! Em breve vou ajustar seus cálculos com base nesses dados.'
     case 'unknown':
     default:
       return FALLBACK_RESPONSE

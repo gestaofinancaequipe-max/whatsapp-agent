@@ -9,8 +9,6 @@ import { handleDailySummaryIntent } from '@/lib/intent-handlers/daily-summary'
 import { handleWeeklySummaryIntent } from '@/lib/intent-handlers/weekly-summary'
 import { handleUpdateUserDataIntent } from '@/lib/intent-handlers/update-user-data'
 import { handleViewUserDataIntent } from '@/lib/intent-handlers/view-user-data'
-import { handleUpdateGoalIntent } from '@/lib/intent-handlers/update-goal'
-import { handleOnboardingIntent } from '@/lib/intent-handlers/onboarding'
 import { handleUnknownIntent } from '@/lib/intent-handlers/unknown'
 import { IntentContext } from '@/lib/intent-handlers/types'
 
@@ -43,10 +41,6 @@ export async function handleIntent(
       return handleUpdateUserDataIntent(context)
     case 'view_user_data':
       return handleViewUserDataIntent(context)
-    case 'update_goal':
-      return handleUpdateGoalIntent(context)
-    case 'onboarding':
-      return handleOnboardingIntent(context)
     default:
       return handleUnknownIntent(context)
   }

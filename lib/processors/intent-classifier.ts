@@ -63,10 +63,19 @@ const patternList: IntentPattern[] = [
     ],
   },
   {
-    intent: 'update_goal',
+    intent: 'update_user_data',
     patterns: [
-      /\b(meta|objetivo)\b/i,
-      /\b(\d{3,4})\s?(kcal|calorias?)\b/i,
+      // Padrões de atualização
+      /\b(mudar|alterar|trocar|atualizar|mudou|alterou)\s+(peso|altura|idade|gênero|genero)\b/i,
+      /\b(peso|altura|idade)\s+(para|é|esta|está)\s*(\d+)/i,
+      /\b(peso|altura|idade)\s+(\d{2,3}(?:[.,]\d{1,2})?)\s?(kg|quilo?s?|cm|cent[ií]metros?|anos?)\b/i,
+      /\b(\d{2,3}(?:[.,]\d{1,2})?)\s?(kg|quilo?s?)\s+(de\s+)?peso\b/i,
+      /\b(\d{2,3})\s?(cm|cent[ií]metros?)\s+(de\s+)?altura\b/i,
+      /\b(\d{2})\s?(anos?)\s+(de\s+)?idade\b/i,
+      // Padrões de onboarding (cadastro inicial)
+      /\b(cadastr|registr|começar|iniciar|configurar)\s+(peso|altura|idade|dados|perfil)\b/i,
+      /\b(meu|minha)\s+(peso|altura|idade)\s+(é|esta|está)\s*(\d+)/i,
+      /\b(sou|tenho)\s+(\d{2,3})\s?(kg|quilo?s?|cm|cent[ií]metros?|anos?)\b/i,
     ],
   },
   {
