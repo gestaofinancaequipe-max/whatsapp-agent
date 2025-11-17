@@ -1,7 +1,6 @@
 import { IntentContext } from '@/lib/intent-handlers/types'
 import { findFoodItem, incrementFoodUsage } from '@/lib/services/food'
 import { logFoodFallback } from '@/lib/services/fallback-log'
-import { createPendingMeal } from '@/lib/services/meals'
 import { UserRecord } from '@/lib/services/users'
 import {
   extractFoodWithLLM,
@@ -9,6 +8,8 @@ import {
   FoodParseResultArray,
 } from '@/lib/services/food-parser'
 import { sanitizeFoodQuery } from '@/lib/utils/text'
+import { encodeTempData, TemporaryMealData } from '@/lib/utils/temp-data'
+import { getOrCreateDailySummary } from '@/lib/services/daily-summaries'
 import Groq from 'groq-sdk'
 
 interface ParsedMealRequest {
@@ -521,25 +522,16 @@ export async function handleLogFoodIntent(
     ? `${quantityValue} ${quantityUnit || 'porção'} de ${food.name} (~${grams.toFixed(0)}g)`
     : `${quantityValue} ${quantityUnit || 'porção'} de ${food.name}`
 
-  await createPendingMeal({
-    userId,
-    description: mealDescription,
-    calories,
-    protein,
-    carbs,
-    fat,
-    fiber,
-    originalEstimate: {
-      quantity: quantityValue,
-      unit: quantityUnit,
-      grams,
-      source_food_id: food.id,
-    },
-  })
-
   await incrementFoodUsage(food.id, food.usage_count || 0)
 
-  return buildResponseMessage({
+  // Obter daily summary para incluir no tempData
+  const dailySummary = await getOrCreateDailySummary(userId)
+  if (!dailySummary) {
+    return '❌ Erro ao processar. Tente novamente.'
+  }
+
+  // Construir mensagem visível
+  const visibleMessage = buildResponseMessage({
     description: mealDescription,
     calories,
     protein,
@@ -547,6 +539,31 @@ export async function handleLogFoodIntent(
     fat,
     grams,
   })
+
+  // Criar dados temporários
+  const tempData: TemporaryMealData = {
+    type: 'meal',
+    timestamp: new Date().toISOString(),
+    userId,
+    data: {
+      description: mealDescription,
+      calories,
+      protein_g: protein,
+      carbs_g: carbs,
+      fat_g: fat,
+      fiber_g: fiber,
+      grams: grams || null,
+      originalEstimate: {
+        quantity: quantityValue,
+        unit: quantityUnit,
+        grams,
+        source_food_id: food.id,
+      },
+    },
+  }
+
+  // Retornar mensagem com dados temporários codificados
+  return `${visibleMessage}${encodeTempData(tempData)}`
 }
 
 async function handleMultipleFoods(
@@ -702,25 +719,11 @@ async function handleMultipleFoods(
   })
   const mealDescription = mealItems.join(', ')
 
-  // Criar refeição composta
-  await createPendingMeal({
-    userId,
-    description: mealDescription,
-    calories: totalCalories,
-    protein: totalProtein,
-    carbs: totalCarbs,
-    fat: totalFat,
-    fiber: totalFiber,
-    originalEstimate: {
-      items: processedFoods.map((f) => ({
-        food_id: f.food.id,
-        food_name: f.food.name,
-        quantity: f.quantity,
-        unit: f.unit,
-        grams: f.grams,
-      })),
-    },
-  })
+  // Obter daily summary para incluir no tempData
+  const dailySummary = await getOrCreateDailySummary(userId)
+  if (!dailySummary) {
+    return '❌ Erro ao processar. Tente novamente.'
+  }
 
   // Preparar itens para exibição
   const displayItems = processedFoods.map((f) => {
@@ -735,7 +738,8 @@ async function handleMultipleFoods(
     }
   })
 
-  return buildResponseMessage({
+  // Construir mensagem visível
+  const visibleMessage = buildResponseMessage({
     description: mealDescription,
     calories: totalCalories,
     protein: totalProtein,
@@ -744,6 +748,34 @@ async function handleMultipleFoods(
     grams: totalGrams > 0 ? totalGrams : null,
     items: displayItems,
   })
+
+  // Criar dados temporários
+  const tempData: TemporaryMealData = {
+    type: 'meal',
+    timestamp: new Date().toISOString(),
+    userId,
+    data: {
+      description: mealDescription,
+      calories: totalCalories,
+      protein_g: totalProtein,
+      carbs_g: totalCarbs,
+      fat_g: totalFat,
+      fiber_g: totalFiber,
+      grams: totalGrams > 0 ? totalGrams : null,
+      originalEstimate: {
+        items: processedFoods.map((f) => ({
+          food_id: f.food.id,
+          food_name: f.food.name,
+          quantity: f.quantity,
+          unit: f.unit,
+          grams: f.grams,
+        })),
+      },
+    },
+  }
+
+  // Retornar mensagem com dados temporários codificados
+  return `${visibleMessage}${encodeTempData(tempData)}`
 }
 
 function extractFoodFromHistory(

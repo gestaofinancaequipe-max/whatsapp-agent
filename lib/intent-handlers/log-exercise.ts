@@ -1,8 +1,9 @@
 import { IntentContext } from '@/lib/intent-handlers/types'
 import { findExerciseMet, resolveMetValue } from '@/lib/services/exercise-met'
-import { createPendingExercise } from '@/lib/services/exercises'
 import { logFoodFallback } from '@/lib/services/fallback-log'
 import { extractExerciseWithLLM } from '@/lib/services/exercise-parser'
+import { encodeTempData, TemporaryExerciseData } from '@/lib/utils/temp-data'
+import { getOrCreateDailySummary } from '@/lib/services/daily-summaries'
 
 const INTENSITY_KEYWORDS: Record<string, 'light' | 'moderate' | 'intense'> = {
   leve: 'light',
@@ -103,16 +104,6 @@ export async function handleLogExerciseIntent(
 
   const description = `${exercise.exercise_name} (${intensity})`
 
-  await createPendingExercise({
-    userId: context.user.id,
-    description,
-    exerciseType: exercise.exercise_name,
-    durationMinutes,
-    intensity,
-    metValue,
-    caloriesBurned,
-  })
-
   console.log('🧮 Exercise calculation:', {
     exercise: exercise.exercise_name,
     exerciseId: exercise.id,
@@ -124,7 +115,14 @@ export async function handleLogExerciseIntent(
     formula: `${metValue.toFixed(1)} MET × ${weightKg}kg × ${durationMinutes}min / 60 = ${caloriesBurned.toFixed(1)} kcal`,
   })
 
-  return [
+  // Obter daily summary para incluir no tempData
+  const dailySummary = await getOrCreateDailySummary(context.user.id)
+  if (!dailySummary) {
+    return '❌ Erro ao processar. Tente novamente.'
+  }
+
+  // Construir mensagem visível
+  const visibleMessage = [
     `🏃 Estimativa para ${description}`,
     `Duração: ${durationMinutes} min`,
     `MET: ${metValue.toFixed(1)}`,
@@ -133,5 +131,23 @@ export async function handleLogExerciseIntent(
     '',
     'Confirma? 1️⃣ Sim | 2️⃣ Corrigir',
   ].join('\n')
+
+  // Criar dados temporários
+  const tempData: TemporaryExerciseData = {
+    type: 'exercise',
+    timestamp: new Date().toISOString(),
+    userId: context.user.id,
+    data: {
+      description,
+      exerciseType: exercise.exercise_name,
+      durationMinutes,
+      intensity,
+      metValue,
+      caloriesBurned,
+    },
+  }
+
+  // Retornar mensagem com dados temporários codificados
+  return `${visibleMessage}${encodeTempData(tempData)}`
 }
 

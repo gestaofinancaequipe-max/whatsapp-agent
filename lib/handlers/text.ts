@@ -1,4 +1,4 @@
-import { getOrCreateConversation, getMessagesSinceLastAssistantResponse } from '@/lib/services/supabase'
+import { getOrCreateConversation, getMessagesSinceLastAssistantResponse, getLastAssistantMessage } from '@/lib/services/supabase'
 import { sendWhatsAppMessage } from '@/lib/whatsapp'
 import { classifyIntent } from '@/lib/processors/intent-classifier'
 import { getOrCreateUserByPhone } from '@/lib/services/users'
@@ -9,16 +9,10 @@ import {
 import { handleIntent } from '@/lib/intent-handlers'
 import { getConversationContext } from '@/lib/services/conversation-context'
 import { simulateHumanDelay } from '@/lib/utils/delay'
-import {
-  getPendingMeals,
-  confirmMeal,
-  deletePendingMeal,
-} from '@/lib/services/meals'
-import {
-  getPendingExercises,
-  confirmExercise,
-  deletePendingExercise,
-} from '@/lib/services/exercises'
+import { extractTempData, removeTempData, TemporaryMealData, TemporaryExerciseData } from '@/lib/utils/temp-data'
+import { createConfirmedMeal } from '@/lib/services/meals'
+import { createConfirmedExercise } from '@/lib/services/exercises'
+import { getOrCreateDailySummary } from '@/lib/services/daily-summaries'
 
 interface TextHandlerParams {
   senderPhone: string
@@ -62,7 +56,7 @@ export async function handleTextMessage({
       time: Date.now() - step2Start,
     })
 
-    // Verificar se há refeição ou exercício pendente e se a mensagem é confirmação/correção
+    // Verificar se a mensagem é confirmação/correção e buscar dados temporários
     const normalizedText = text.trim().toLowerCase()
     
     // Palavras-chave de confirmação
@@ -73,168 +67,144 @@ export async function handleTextMessage({
     const isCorrection = correctionKeywords.includes(normalizedText)
     
     if ((isConfirmation || isCorrection) && user?.id) {
-      // Verificar refeição pendente primeiro
-      const pendingMeals = await getPendingMeals(user.id, 1)
+      // Buscar última mensagem do assistente para extrair dados temporários
+      const lastAssistantMessage = await getLastAssistantMessage(conversationId)
       
-      if (pendingMeals.length > 0) {
-        const pendingMeal = pendingMeals[0]
+      if (lastAssistantMessage) {
+        const tempData = extractTempData(lastAssistantMessage.content)
         
-        if (isConfirmation) {
-          // Confirmar refeição
-          console.log('✅ Confirming pending meal:', {
+        if (tempData) {
+          console.log('📋 Found temporary data:', {
             handlerId,
-            mealId: pendingMeal.id,
-            description: pendingMeal.description,
+            type: tempData.type,
+            timestamp: tempData.timestamp,
           })
-          
-          const confirmedMeal = await confirmMeal(pendingMeal.id)
-          
-          if (confirmedMeal) {
-            const reply = `✅ Refeição confirmada!\n\n${confirmedMeal.description}\n${confirmedMeal.calories} kcal | ${confirmedMeal.protein_g.toFixed(1)}g proteína`
-            
-            await recordUserMessage({
-              conversationId,
-              content: text,
-              intent: 'register_meal',
-              user: user || undefined,
-            })
-            
-            await recordAssistantMessage({
-              conversationId,
-              content: reply,
-              intent: 'register_meal',
-              user: user || undefined,
-            })
-            
-            await simulateHumanDelay()
-            await sendWhatsAppMessage(senderPhone, reply)
-            
-            console.log('✅ Meal confirmed successfully:', {
-              handlerId,
-              mealId: confirmedMeal.id,
-              totalTime: Date.now() - startTime,
-            })
-            return
-          }
-        } else if (isCorrection) {
-          // Deletar refeição pendente
-          console.log('🗑️ Deleting pending meal for correction:', {
-            handlerId,
-            mealId: pendingMeal.id,
-            description: pendingMeal.description,
-          })
-          
-          const deleted = await deletePendingMeal(pendingMeal.id)
-          
-          if (deleted) {
-            const reply = '🗑️ Refeição cancelada. Pode descrever novamente a refeição correta.'
-            
-            await recordUserMessage({
-              conversationId,
-              content: text,
-              intent: 'register_meal',
-              user: user || undefined,
-            })
-            
-            await recordAssistantMessage({
-              conversationId,
-              content: reply,
-              intent: 'register_meal',
-              user: user || undefined,
-            })
-            
-            await simulateHumanDelay()
-            await sendWhatsAppMessage(senderPhone, reply)
-            
-            console.log('✅ Meal deleted for correction:', {
-              handlerId,
-              mealId: pendingMeal.id,
-              totalTime: Date.now() - startTime,
-            })
-            return
-          }
-        }
-      } else {
-        // Verificar exercício pendente
-        const pendingExercises = await getPendingExercises(user.id, 1)
-        
-        if (pendingExercises.length > 0) {
-          const pendingExercise = pendingExercises[0]
           
           if (isConfirmation) {
-            // Confirmar exercício
-            console.log('✅ Confirming pending exercise:', {
-              handlerId,
-              exerciseId: pendingExercise.id,
-              description: pendingExercise.description,
-            })
-            
-            const confirmedExercise = await confirmExercise(pendingExercise.id)
-            
-            if (confirmedExercise) {
-              const reply = `✅ Exercício confirmado!\n\n${confirmedExercise.description}\n${confirmedExercise.calories_burned} kcal queimadas`
+            // Confirmar: criar meal/exercise diretamente como confirmado
+            if (tempData.type === 'meal') {
+              const mealData = tempData as TemporaryMealData
+              const dailySummary = await getOrCreateDailySummary(mealData.userId)
               
-              await recordUserMessage({
-                conversationId,
-                content: text,
-                intent: 'register_exercise',
-                user: user || undefined,
-              })
+              if (!dailySummary) {
+                console.error('❌ Could not get daily summary for meal confirmation')
+              } else {
+                const confirmedMeal = await createConfirmedMeal({
+                  userId: mealData.userId,
+                  dailySummaryId: dailySummary.id,
+                  description: mealData.data.description,
+                  calories: mealData.data.calories,
+                  protein: mealData.data.protein_g,
+                  carbs: mealData.data.carbs_g,
+                  fat: mealData.data.fat_g,
+                  fiber: mealData.data.fiber_g,
+                  originalEstimate: mealData.data.originalEstimate,
+                })
+                
+                if (confirmedMeal) {
+                  const reply = `✅ Refeição confirmada!\n\n${confirmedMeal.description}\n${confirmedMeal.calories} kcal | ${confirmedMeal.protein_g.toFixed(1)}g proteína`
+                  
+                  await recordUserMessage({
+                    conversationId,
+                    content: text,
+                    intent: 'register_meal',
+                    user: user || undefined,
+                  })
+                  
+                  await recordAssistantMessage({
+                    conversationId,
+                    content: reply,
+                    intent: 'register_meal',
+                    user: user || undefined,
+                  })
+                  
+                  await simulateHumanDelay()
+                  await sendWhatsAppMessage(senderPhone, reply)
+                  
+                  console.log('✅ Meal confirmed from temp data:', {
+                    handlerId,
+                    mealId: confirmedMeal.id,
+                    totalTime: Date.now() - startTime,
+                  })
+                  return
+                }
+              }
+            } else if (tempData.type === 'exercise') {
+              const exerciseData = tempData as TemporaryExerciseData
+              const dailySummary = await getOrCreateDailySummary(exerciseData.userId)
               
-              await recordAssistantMessage({
-                conversationId,
-                content: reply,
-                intent: 'register_exercise',
-                user: user || undefined,
-              })
-              
-              await simulateHumanDelay()
-              await sendWhatsAppMessage(senderPhone, reply)
-              
-              console.log('✅ Exercise confirmed successfully:', {
-                handlerId,
-                exerciseId: confirmedExercise.id,
-                totalTime: Date.now() - startTime,
-              })
-              return
+              if (!dailySummary) {
+                console.error('❌ Could not get daily summary for exercise confirmation')
+              } else {
+                const confirmedExercise = await createConfirmedExercise({
+                  userId: exerciseData.userId,
+                  dailySummaryId: dailySummary.id,
+                  description: exerciseData.data.description,
+                  exerciseType: exerciseData.data.exerciseType,
+                  durationMinutes: exerciseData.data.durationMinutes,
+                  intensity: exerciseData.data.intensity,
+                  metValue: exerciseData.data.metValue,
+                  caloriesBurned: exerciseData.data.caloriesBurned,
+                })
+                
+                if (confirmedExercise) {
+                  const reply = `✅ Exercício confirmado!\n\n${confirmedExercise.description}\n${confirmedExercise.calories_burned} kcal queimadas`
+                  
+                  await recordUserMessage({
+                    conversationId,
+                    content: text,
+                    intent: 'register_exercise',
+                    user: user || undefined,
+                  })
+                  
+                  await recordAssistantMessage({
+                    conversationId,
+                    content: reply,
+                    intent: 'register_exercise',
+                    user: user || undefined,
+                  })
+                  
+                  await simulateHumanDelay()
+                  await sendWhatsAppMessage(senderPhone, reply)
+                  
+                  console.log('✅ Exercise confirmed from temp data:', {
+                    handlerId,
+                    exerciseId: confirmedExercise.id,
+                    totalTime: Date.now() - startTime,
+                  })
+                  return
+                }
+              }
             }
           } else if (isCorrection) {
-            // Deletar exercício pendente
-            console.log('🗑️ Deleting pending exercise for correction:', {
-              handlerId,
-              exerciseId: pendingExercise.id,
-              description: pendingExercise.description,
+            // Correção: apenas responder (dados temporários serão descartados automaticamente)
+            const reply = tempData.type === 'meal' 
+              ? '🗑️ Refeição cancelada. Pode descrever novamente a refeição correta.'
+              : '🗑️ Exercício cancelado. Pode descrever novamente o exercício correto.'
+            
+            await recordUserMessage({
+              conversationId,
+              content: text,
+              intent: tempData.type === 'meal' ? 'register_meal' : 'register_exercise',
+              user: user || undefined,
             })
             
-            const deleted = await deletePendingExercise(pendingExercise.id)
+            await recordAssistantMessage({
+              conversationId,
+              content: reply,
+              intent: tempData.type === 'meal' ? 'register_meal' : 'register_exercise',
+              user: user || undefined,
+            })
             
-            if (deleted) {
-              const reply = '🗑️ Exercício cancelado. Pode descrever novamente o exercício correto.'
-              
-              await recordUserMessage({
-                conversationId,
-                content: text,
-                intent: 'register_exercise',
-                user: user || undefined,
-              })
-              
-              await recordAssistantMessage({
-                conversationId,
-                content: reply,
-                intent: 'register_exercise',
-                user: user || undefined,
-              })
-              
-              await simulateHumanDelay()
-              await sendWhatsAppMessage(senderPhone, reply)
-              
-              console.log('✅ Exercise deleted for correction:', {
-                handlerId,
-                exerciseId: pendingExercise.id,
-                totalTime: Date.now() - startTime,
-              })
-              return
-            }
+            await simulateHumanDelay()
+            await sendWhatsAppMessage(senderPhone, reply)
+            
+            console.log('✅ Correction handled (temp data discarded):', {
+              handlerId,
+              type: tempData.type,
+              totalTime: Date.now() - startTime,
+            })
+            return
           }
         }
       }
@@ -325,16 +295,17 @@ export async function handleTextMessage({
       time: Date.now() - step7Start,
     })
 
-    // Salvar resposta do assistente
+    // Salvar resposta do assistente (com dados temporários se houver)
     const step8Start = Date.now()
     await recordAssistantMessage({
       conversationId,
-      content: reply,
+      content: reply, // Salvar completo (com tempData se houver)
       intent: intentResult.intent,
       user: user || undefined,
     })
     console.log('✅ Step 8 - Assistant message saved:', {
       handlerId,
+      hasTempData: reply.includes('__TEMP_DATA_JSON__'),
       time: Date.now() - step8Start,
     })
 
@@ -347,10 +318,11 @@ export async function handleTextMessage({
       delayTime: Date.now() - step9Start,
     })
 
-    // Enviar resposta
+    // Enviar resposta (apenas parte visível, sem dados temporários)
     const step10Start = Date.now()
     console.log('📤 Step 10 - Sending WhatsApp message...', { handlerId })
-    await sendWhatsAppMessage(senderPhone, reply)
+    const visibleMessage = removeTempData(reply) // Remover tempData antes de enviar
+    await sendWhatsAppMessage(senderPhone, visibleMessage)
     console.log('✅ Step 10 - Message sent:', {
       handlerId,
       time: Date.now() - step10Start,

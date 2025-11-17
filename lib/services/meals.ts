@@ -14,6 +14,7 @@ export interface MealRecord {
   fiber_g: number | null
   status: string
   original_estimate: any
+  created_at?: string
 }
 
 export async function createPendingMeal({
@@ -162,6 +163,84 @@ export async function deletePendingMeal(mealId: string): Promise<boolean> {
   }
 
   return true
+}
+
+/**
+ * Cria uma refeição diretamente confirmada (usado quando usuário confirma dados temporários)
+ */
+export async function createConfirmedMeal({
+  userId,
+  dailySummaryId,
+  description,
+  calories,
+  protein,
+  carbs,
+  fat,
+  fiber,
+  originalEstimate,
+}: {
+  userId: string
+  dailySummaryId: string
+  description: string
+  calories: number
+  protein: number
+  carbs: number | null
+  fat: number | null
+  fiber: number | null
+  originalEstimate: any
+}): Promise<MealRecord | null> {
+  const supabase = getSupabaseClient()
+  if (!supabase) return null
+
+  const { data, error } = await supabase
+    .from('meals')
+    .insert({
+      user_id: userId,
+      daily_summary_id: dailySummaryId,
+      description,
+      calories: Math.round(calories),
+      protein_g: protein,
+      carbs_g: carbs,
+      fat_g: fat,
+      fiber_g: fiber,
+      status: 'confirmed', // Criar direto como confirmado
+      original_estimate: originalEstimate,
+    })
+    .select('*')
+    .single()
+
+  if (error || !data) {
+    console.error('❌ Error creating confirmed meal:', error)
+    return null
+  }
+
+  const meal = data as MealRecord
+
+  // Atualizar daily_summary imediatamente
+  const { data: dailySummary } = await supabase
+    .from('daily_summaries')
+    .select('*')
+    .eq('id', dailySummaryId)
+    .single()
+
+  if (dailySummary) {
+    const { error: updateError } = await supabase
+      .from('daily_summaries')
+      .update({
+        total_calories_consumed: (dailySummary.total_calories_consumed || 0) + Math.round(calories),
+        total_protein_g: (dailySummary.total_protein_g || 0) + protein,
+        net_calories: (dailySummary.net_calories || 0) + Math.round(calories),
+      })
+      .eq('id', dailySummaryId)
+
+    if (updateError) {
+      console.error('❌ Error updating daily summary from confirmed meal:', updateError)
+    }
+  }
+
+  await updateUserStreaks(userId)
+
+  return meal
 }
 
 

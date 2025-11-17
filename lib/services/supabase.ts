@@ -319,6 +319,51 @@ export async function getMessagesSinceLastAssistantResponse(
 }
 
 /**
+ * Busca a última mensagem do assistente na conversa (útil para extrair dados temporários)
+ */
+export async function getLastAssistantMessage(
+  conversationId: string
+): Promise<ConversationMessage | null> {
+  try {
+    const supabase = getSupabaseClient()
+    if (!supabase) {
+      throw new Error('Supabase client not initialized')
+    }
+
+    const { data, error } = await supabase
+      .from('messages')
+      .select('role, content, created_at, intent')
+      .eq('conversation_id', conversationId)
+      .eq('role', 'assistant')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .single()
+
+    if (error) {
+      if (error.code === 'PGRST116') {
+        // Nenhuma mensagem encontrada
+        return null
+      }
+      console.error('❌ Error fetching last assistant message:', error)
+      return null
+    }
+
+    return {
+      role: data.role,
+      content: data.content,
+      created_at: data.created_at,
+      intent: data.intent as IntentType | null | undefined,
+    }
+  } catch (error: any) {
+    console.error('❌ Error in getLastAssistantMessage:', {
+      error: error.message,
+      conversationId,
+    })
+    return null
+  }
+}
+
+/**
  * Atualiza o timestamp da última mensagem de uma conversa
  * @param conversationId ID da conversa
  */

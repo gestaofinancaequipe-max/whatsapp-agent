@@ -13,6 +13,7 @@ export interface ExerciseRecord {
   met_value: number
   calories_burned: number
   status: string
+  created_at?: string
 }
 
 export async function createPendingExercise({
@@ -155,5 +156,79 @@ export async function deletePendingExercise(exerciseId: string): Promise<boolean
   }
 
   return true
+}
+
+/**
+ * Cria um exercício diretamente confirmado (usado quando usuário confirma dados temporários)
+ */
+export async function createConfirmedExercise({
+  userId,
+  dailySummaryId,
+  description,
+  exerciseType,
+  durationMinutes,
+  intensity,
+  metValue,
+  caloriesBurned,
+}: {
+  userId: string
+  dailySummaryId: string
+  description: string
+  exerciseType: string
+  durationMinutes: number
+  intensity: string
+  metValue: number
+  caloriesBurned: number
+}): Promise<ExerciseRecord | null> {
+  const supabase = getSupabaseClient()
+  if (!supabase) return null
+
+  const { data, error } = await supabase
+    .from('exercises')
+    .insert({
+      user_id: userId,
+      daily_summary_id: dailySummaryId,
+      description,
+      exercise_type: exerciseType,
+      duration_minutes: durationMinutes,
+      intensity,
+      met_value: metValue,
+      calories_burned: Math.round(caloriesBurned),
+      status: 'confirmed', // Criar direto como confirmado
+    })
+    .select('*')
+    .single()
+
+  if (error || !data) {
+    console.error('❌ Error creating confirmed exercise:', error)
+    return null
+  }
+
+  const exercise = data as ExerciseRecord
+
+  // Atualizar daily_summary imediatamente
+  const { data: dailySummary } = await supabase
+    .from('daily_summaries')
+    .select('*')
+    .eq('id', dailySummaryId)
+    .single()
+
+  if (dailySummary) {
+    const { error: updateError } = await supabase
+      .from('daily_summaries')
+      .update({
+        total_calories_burned: (dailySummary.total_calories_burned || 0) + Math.round(caloriesBurned),
+        net_calories: (dailySummary.net_calories || 0) - Math.round(caloriesBurned),
+      })
+      .eq('id', dailySummaryId)
+
+    if (updateError) {
+      console.error('❌ Error updating daily summary from confirmed exercise:', updateError)
+    }
+  }
+
+  await updateUserStreaks(userId)
+
+  return exercise
 }
 
