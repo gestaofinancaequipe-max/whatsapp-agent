@@ -10,14 +10,12 @@ interface ConversationMessage {
 interface LLMIntentResponse {
   intent: IntentType
   confidence: number
-  extracted_data?: {
-    food?: string
-    quantity?: string
-    unit?: string
-    exercise?: string
-    duration?: string
-    [key: string]: any
-  }
+  items?: Array<{
+    alimento?: string
+    quantidade?: string | null
+    exercicio?: string
+    duracao?: string | null
+  }>
   reasoning?: string
 }
 
@@ -63,11 +61,12 @@ export async function classifyIntentWithLLM(
       .join('\n')
       .trim()
 
-    // Formatar histórico recente para contexto
-    const historyText = recentHistory
+    // Filtrar apenas mensagens do usuário do histórico recente
+    const userMessages = recentHistory
       ? recentHistory
-          .slice(-5) // Últimas 5 mensagens
-          .map((msg) => `${msg.role === 'user' ? 'Usuário' : 'Assistente'}: ${msg.content}`)
+          .filter((msg) => msg.role === 'user')
+          .slice(-3) // Últimas 3 mensagens do usuário
+          .map((msg) => msg.content)
           .join('\n')
       : 'Nenhum histórico disponível'
 
@@ -75,54 +74,52 @@ export async function classifyIntentWithLLM(
       messageCount: messages.length,
       totalLength: userMessagesText.length,
       hasHistory: !!recentHistory && recentHistory.length > 0,
+      userHistoryCount: recentHistory
+        ? recentHistory.filter((msg) => msg.role === 'user').length
+        : 0,
     })
 
     const systemPrompt = `Você é um classificador de intenções para um bot nutricional no WhatsApp.
 
-Analise TODAS as mensagens do usuário abaixo (desde a última resposta do bot) e identifique a intenção principal.
+Classifique a intenção e extraia dados estruturados.
 
-Intenções possíveis:
-- greeting: cumprimentos (olá, oi, bom dia, etc.)
-- help: pedido de ajuda ou comandos
-- register_meal: registrar refeição/comida (comi, almocei, jantei, etc.)
-- register_exercise: registrar exercício (corri, malhei, treino, etc.)
-- query_balance: consultar saldo de calorias restantes
-- query_food_info: consultar informações nutricionais de um alimento
-- daily_summary: resumo do dia
-- summary_week: resumo da semana
-- update_user_data: atualizar dados pessoais (peso, altura, idade)
-- update_goal: atualizar meta de calorias/proteínas
-- onboarding: primeiro uso/cadastro
-- unknown: não identificado (use apenas se realmente não conseguir identificar)
+Intents disponíveis:
+- register_meal: registrar refeição
+- register_exercise: registrar exercício
+- query_balance: consultar calorias restantes
+- query_food_info: informação nutricional
+- help, greeting, daily_summary, summary_week, update_user_data, update_goal, onboarding, unknown
 
-IMPORTANTE:
-- Se o usuário enviou múltiplas mensagens, analise TODAS juntas
-- Se mencionar alimento OU quantidade, provavelmente é register_meal ou query_food_info
-- Se mencionar exercício OU duração, provavelmente é register_exercise
-- Se for pergunta sobre calorias/proteínas de um alimento, é query_food_info
-- Se for pergunta sobre quanto ainda pode comer, é query_balance
+Para register_meal:
+- Extraia lista de [alimento, quantidade] EXATAMENTE como o usuário escreveu
+- Se quantidade não especificada: null
+- Exemplos:
+  * "100g de arroz" → [{"alimento":"arroz","quantidade":"100g"}]
+  * "arroz e feijão" → [{"alimento":"arroz","quantidade":null},{"alimento":"feijão","quantidade":null}]
+  * "2 colheres de arroz, 150g de frango" → [{"alimento":"arroz","quantidade":"2 colheres"},{"alimento":"frango","quantidade":"150g"}]
 
-Responda APENAS com JSON válido, sem markdown, sem explicações adicionais:
+Para register_exercise:
+- Extraia [exercicio, duracao] EXATAMENTE como o usuário escreveu
+- Se duração não especificada: null
+- Exemplos:
+  * "corri 30 minutos" → [{"exercicio":"corrida","duracao":"30 minutos"}]
+  * "malhei" → [{"exercicio":"musculacao","duracao":null}]
+  * "30 min de esteira e 20 min de bicicleta" → [{"exercicio":"esteira","duracao":"30 min"},{"exercicio":"bicicleta","duracao":"20 min"}]
+
+Retorne JSON:
 {
-  "intent": "nome_da_intencao",
-  "confidence": 0.0-1.0,
-  "extracted_data": {
-    "food": "nome do alimento se houver",
-    "quantity": "quantidade numérica se houver",
-    "unit": "unidade (g, kg, unidade, etc.) se houver",
-    "exercise": "nome do exercício se houver",
-    "duration": "duração em minutos se houver"
-  },
-  "reasoning": "breve explicação em uma frase"
+  "intent": "register_meal",
+  "confidence": 0.95,
+  "items": [{"alimento":"...","quantidade":"..."}]
 }`
 
-    const userPrompt = `Mensagens do usuário (desde última resposta):
+    const userPrompt = `Mensagens do usuário:
 ${userMessagesText}
 
-Histórico recente (últimas 5 mensagens):
-${historyText}
+Contexto (mensagens anteriores do usuário):
+${userMessages}
 
-Classifique a intenção e extraia dados relevantes.`
+Classifique e extraia dados.`
 
     const timeout = parseInt(process.env.LLM_INTENT_TIMEOUT_MS || '3000', 10)
 
@@ -133,7 +130,7 @@ Classifique a intenção e extraia dados relevantes.`
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userPrompt },
       ],
-      max_tokens: 300,
+      max_tokens: 400,
       temperature: 0.3, // Baixa temperatura para respostas mais consistentes
       response_format: { type: 'json_object' },
     })
@@ -156,20 +153,26 @@ Classifique a intenção e extraia dados relevantes.`
     }
 
     // Parsear resposta JSON
-    let llmResult: LLMIntentResponse
-    try {
-      llmResult = JSON.parse(content)
-    } catch (parseError) {
-      // Tentar extrair JSON do texto (caso venha com markdown ou texto adicional)
-      const jsonMatch = content.match(/\{[\s\S]*\}/)
+    let cleanedContent = content.trim()
+    
+    // Remover markdown code blocks se houver
+    if (cleanedContent.includes('```')) {
+      const jsonMatch = cleanedContent.match(/```(?:json)?\s*([\s\S]*?)\s*```/)
       if (jsonMatch) {
-        llmResult = JSON.parse(jsonMatch[0])
-      } else {
-        console.error('❌ Failed to parse LLM response as JSON:', {
-          content: content.substring(0, 200),
-        })
-        return null
+        cleanedContent = jsonMatch[1].trim()
       }
+    }
+
+    const parsed = JSON.parse(cleanedContent) as {
+      intent: string
+      confidence: number
+      items?: Array<{
+        alimento?: string
+        quantidade?: string | null
+        exercicio?: string
+        duracao?: string | null
+      }>
+      reasoning?: string
     }
 
     // Validar intent
@@ -188,26 +191,25 @@ Classifique a intenção e extraia dados relevantes.`
       'unknown',
     ]
 
-    if (!validIntents.includes(llmResult.intent)) {
-      console.error('❌ Invalid intent from LLM:', llmResult.intent)
+    if (!validIntents.includes(parsed.intent as IntentType)) {
+      console.error('❌ Invalid intent from LLM:', parsed.intent)
       return null
     }
 
     const result: IntentResult = {
-      intent: llmResult.intent,
-      confidence: Math.max(0, Math.min(1, llmResult.confidence || 0.8)),
+      intent: parsed.intent as IntentType,
+      confidence: Math.max(0, Math.min(1, parsed.confidence || 0.8)),
       matchedPattern: 'llm_classification',
+      items: parsed.items || [],
     }
 
     console.log('✅ LLM intent classified:', {
       intent: result.intent,
       confidence: result.confidence,
-      reasoning: llmResult.reasoning,
-      extractedData: llmResult.extracted_data,
+      itemsCount: result.items?.length || 0,
+      items: result.items,
+      reasoning: parsed.reasoning,
     })
-
-    // Armazenar extracted_data em uma propriedade customizada (se necessário no futuro)
-    // Por enquanto, apenas logamos
 
     return result
   } catch (error: any) {

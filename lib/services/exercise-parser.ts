@@ -24,6 +24,10 @@ const INTENSITY_KEYWORDS = {
 
 /**
  * Extrai informações do exercício usando LLM
+ * @deprecated Esta função não é mais usada diretamente.
+ * A extração agora é feita na classificação de intent (llm-intent-classifier.ts)
+ * e o processamento é feito pelo processExerciseCascade (exercise-item-processor.ts).
+ * Use apenas como fallback ou para casos específicos.
  */
 export async function extractExerciseWithLLM(
   message: string

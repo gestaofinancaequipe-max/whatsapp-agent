@@ -16,5 +16,11 @@ export interface IntentResult {
   intent: IntentType
   confidence: number
   matchedPattern?: string
+  items?: Array<{
+    alimento?: string // Para register_meal
+    quantidade?: string | null
+    exercicio?: string // Para register_exercise
+    duracao?: string | null
+  }>
 }
 

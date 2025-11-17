@@ -1,153 +1,137 @@
 import { IntentContext } from '@/lib/intent-handlers/types'
-import { findExerciseMet, resolveMetValue } from '@/lib/services/exercise-met'
 import { logFoodFallback } from '@/lib/services/fallback-log'
-import { extractExerciseWithLLM } from '@/lib/services/exercise-parser'
 import { encodeTempData, TemporaryExerciseData } from '@/lib/utils/temp-data'
-import { getOrCreateDailySummary } from '@/lib/services/daily-summaries'
-
-const INTENSITY_KEYWORDS: Record<string, 'light' | 'moderate' | 'intense'> = {
-  leve: 'light',
-  tranquilo: 'light',
-  moderado: 'moderate',
-  moderada: 'moderate',
-  intenso: 'intense',
-  intensa: 'intense',
-  forte: 'intense',
-  pesado: 'intense',
-}
+import { processExerciseCascade } from '@/lib/processors/exercise-item-processor'
 
 const DEFAULT_WEIGHT_KG = 70
-
-interface ParsedExercise {
-  durationMinutes: number
-  intensity: 'light' | 'moderate' | 'intense'
-  exerciseQuery: string
-}
-
-const durationRegex = /(\d{1,3})(?:\s*)(min|mins|minutos?)/i
-
-function parseExerciseMessage(text: string): ParsedExercise {
-  let durationMinutes = 30
-  const durationMatch = text.match(durationRegex)
-  if (durationMatch) {
-    durationMinutes = parseInt(durationMatch[1], 10)
-  }
-
-  let intensity: 'light' | 'moderate' | 'intense' = 'moderate'
-  for (const [keyword, value] of Object.entries(INTENSITY_KEYWORDS)) {
-    if (text.toLowerCase().includes(keyword)) {
-      intensity = value
-      break
-    }
-  }
-
-  const exerciseQuery = text.replace(durationRegex, '').trim()
-
-  return {
-    durationMinutes: Math.max(durationMinutes, 5),
-    intensity,
-    exerciseQuery: exerciseQuery.length > 0 ? exerciseQuery : text,
-  }
-}
-
-function formatCalories(value: number) {
-  return `${Math.round(value)} kcal`
-}
 
 export async function handleLogExerciseIntent(
   context: IntentContext
 ): Promise<string> {
-  if (!context.user?.id) {
+  const { intentResult, user, conversationId, messageText } = context
+
+  if (!user?.id) {
     return '⚠️ Preciso do seu cadastro para registrar exercícios. Digite "ajuda" para começar.'
   }
 
-  if (!context.user.weight_kg) {
+  if (!user.weight_kg) {
     return '⚖️ Para calcular calorias queimadas preciso do seu peso atual. Envie algo como "Peso 82kg" e depois tente registrar o exercício novamente.'
   }
 
-  // Tentar extrair com LLM primeiro
-  const llmResult = await extractExerciseWithLLM(context.messageText)
-  
-  // Fallback para parser regex se LLM não funcionar
-  const regexParsed = parseExerciseMessage(context.messageText)
-  
-  // Usar resultado do LLM se disponível, senão usar regex
-  const exerciseName = llmResult.exercise || regexParsed.exerciseQuery
-  const durationMinutes = llmResult.duration_minutes || regexParsed.durationMinutes
-  const intensity = llmResult.intensity || regexParsed.intensity
-
-  console.log('🏃 Exercise extraction:', {
-    original: context.messageText,
-    llmResult,
-    regexParsed,
-    final: { exerciseName, durationMinutes, intensity },
-  })
-
-  if (!exerciseName || exerciseName.trim().length === 0) {
-    return '🔍 Não consegui identificar o exercício. Pode descrever novamente? Ex: "corri 30 minutos"'
+  // Verificar se temos items extraídos do intent
+  if (!intentResult.items || intentResult.items.length === 0) {
+    return '🤔 Não consegui identificar o exercício. Pode descrever o que fez?'
   }
 
-  const exercise = await findExerciseMet(exerciseName)
-  if (!exercise) {
-    await logFoodFallback({
-      query: exerciseName,
-      phoneNumber: context.user.phone_number,
-    })
-    return `🤔 Ainda não conheço "${exerciseName}". Vou pesquisar e te aviso quando puder registrar esse exercício.`
+  console.log('💪 Processing exercise items:', intentResult.items)
+
+  // Obter peso do usuário (necessário para cálculo de calorias)
+  const userWeight = user.weight_kg || DEFAULT_WEIGHT_KG
+
+  // Processar cada dupla (exercicio, duracao)
+  const processedItems: Array<any> = []
+  const failedItems: Array<string> = []
+  const itemCache = new Map<string, any>() // Cache local para esta sessão
+
+  for (const item of intentResult.items) {
+    if (!item.exercicio) continue
+
+    const processed = await processExerciseCascade(
+      item.exercicio,
+      item.duracao || null,
+      user.id,
+      userWeight,
+      itemCache
+    )
+
+    if (processed) {
+      processedItems.push(processed)
+
+      console.log('✅ Exercise processed:', {
+        exercise: processed.exercise.exercise_name,
+        duration: `${processed.duration} min`,
+        intensity: processed.intensity,
+        caloriesBurned: processed.caloriesBurned.toFixed(0),
+        method: processed.method,
+      })
+
+      // Log fallback para exercícios não encontrados (se necessário)
+      if (processed.method === 'llm' && processed.exercise) {
+        await logFoodFallback({
+          query: item.exercicio,
+          phoneNumber: user.phone_number || 'unknown',
+        })
+      }
+    } else {
+      failedItems.push(item.exercicio)
+      await logFoodFallback({
+        query: item.exercicio,
+        phoneNumber: user.phone_number || 'unknown',
+      })
+    }
   }
 
-  const metValue = resolveMetValue(exercise, intensity)
-  const weightKg = context.user.weight_kg || DEFAULT_WEIGHT_KG
-
-  const caloriesBurned =
-    metValue * weightKg * (durationMinutes / 60)
-
-  const description = `${exercise.exercise_name} (${intensity})`
-
-  console.log('🧮 Exercise calculation:', {
-    exercise: exercise.exercise_name,
-    exerciseId: exercise.id,
-    duration: durationMinutes,
-    intensity,
-    metValue: metValue.toFixed(1),
-    weightKg,
-    caloriesBurned: caloriesBurned.toFixed(1),
-    formula: `${metValue.toFixed(1)} MET × ${weightKg}kg × ${durationMinutes}min / 60 = ${caloriesBurned.toFixed(1)} kcal`,
-  })
-
-  // Obter daily summary para incluir no tempData
-  const dailySummary = await getOrCreateDailySummary(context.user.id)
-  if (!dailySummary) {
-    return '❌ Erro ao processar. Tente novamente.'
+  if (processedItems.length === 0) {
+    return `🤔 Não consegui processar: ${failedItems.join(', ')}`
   }
 
-  // Construir mensagem visível
-  const visibleMessage = [
-    `🏃 Estimativa para ${description}`,
-    `Duração: ${durationMinutes} min`,
-    `MET: ${metValue.toFixed(1)}`,
-    `Peso considerado: ${weightKg} kg`,
-    `Calorias queimadas: ~${formatCalories(caloriesBurned)}`,
-    '',
-    'Confirma? 1️⃣ Sim | 2️⃣ Corrigir',
-  ].join('\n')
+  // Somar totais
+  const totalDuration = processedItems.reduce((sum, i) => sum + i.duration, 0)
+  const totalCalories = processedItems.reduce((sum, i) => sum + i.caloriesBurned, 0)
 
-  // Criar dados temporários
+  // Montar mensagem
+  const visibleMessage =
+    processedItems.length === 1
+      ? `💪 ${processedItems[0].duration} min de ${processedItems[0].exercise.exercise_name}
+- Calorias queimadas: ~${processedItems[0].caloriesBurned.toFixed(0)} kcal
+- Intensidade: ${processedItems[0].intensity}
+- MET: ${processedItems[0].metValue.toFixed(1)}
+- Peso considerado: ${userWeight} kg
+
+Confirma? 1️⃣ Sim | 2️⃣ Corrigir`
+      : `💪 Treino (${totalDuration} min)
+${processedItems
+  .map(
+    (item) =>
+      `• ${item.duration} min de ${item.exercise.exercise_name}: ~${item.caloriesBurned.toFixed(0)} kcal`
+  )
+  .join('\n')}
+
+📊 TOTAL:
+- Duração: ${totalDuration} min
+- Calorias queimadas: ~${totalCalories.toFixed(0)} kcal
+- Peso considerado: ${userWeight} kg
+
+Confirma? 1️⃣ Sim | 2️⃣ Corrigir`
+
+  // Encode tempData
   const tempData: TemporaryExerciseData = {
     type: 'exercise',
     timestamp: new Date().toISOString(),
-    userId: context.user.id,
-    data: {
-      description,
-      exerciseType: exercise.exercise_name,
-      durationMinutes,
-      intensity,
-      metValue,
-      caloriesBurned,
-    },
+    userId: user.id,
+    data:
+      processedItems.length === 1
+        ? {
+            description: `${processedItems[0].duration} min de ${processedItems[0].exercise.exercise_name}`,
+            exerciseType: processedItems[0].exercise.exercise_name,
+            durationMinutes: processedItems[0].duration,
+            intensity: processedItems[0].intensity,
+            metValue: processedItems[0].metValue,
+            caloriesBurned: processedItems[0].caloriesBurned,
+          }
+        : {
+            description: processedItems
+              .map((i) => `${i.duration} min de ${i.exercise.exercise_name}`)
+              .join(', '),
+            exerciseType: 'múltiplos',
+            durationMinutes: totalDuration,
+            intensity: 'moderate',
+            metValue:
+              processedItems.reduce((sum, i) => sum + i.metValue, 0) / processedItems.length,
+            caloriesBurned: totalCalories,
+          },
   }
 
-  // Retornar mensagem com dados temporários codificados
   return `${visibleMessage}${encodeTempData(tempData)}`
 }
 
