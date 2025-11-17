@@ -158,6 +158,46 @@ export async function sendWhatsAppMessage(
 }
 
 /**
+ * Busca a URL pública temporária de um media (imagem/áudio) via Graph API
+ * @param mediaId ID do media do WhatsApp
+ * @param token Token de acesso (opcional, usa env se não fornecido)
+ * @param apiVersion Versão da API (padrão: v21.0)
+ * @returns URL temporária do media
+ */
+export async function getMediaUrl(
+  mediaId: string,
+  token?: string,
+  apiVersion: string = 'v21.0'
+): Promise<string> {
+  const accessToken = token || process.env.WHATSAPP_TOKEN
+  if (!accessToken) {
+    throw new Error('WHATSAPP_TOKEN não está configurado')
+  }
+
+  const mediaUrl = `https://graph.facebook.com/${apiVersion}/${mediaId}`
+
+  const response = await fetch(mediaUrl, {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+  })
+
+  if (!response.ok) {
+    const body = await response.text().catch(() => '')
+    throw new Error(
+      `Failed to fetch media url (${response.status}): ${body || 'unknown error'}`
+    )
+  }
+
+  const data = await response.json()
+  if (!data.url) {
+    throw new Error('Media response did not include url field')
+  }
+
+  return data.url as string
+}
+
+/**
  * Extrai a mensagem do payload do webhook do Meta
  * @param body Body recebido do webhook
  * @returns Mensagem extraída ou null se não encontrar

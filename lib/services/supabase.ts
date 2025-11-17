@@ -127,10 +127,9 @@ export async function getConversationHistory(
     })
 
     // Buscar últimas N mensagens (DESC) para depois reverter
-    // Nota: intent não está disponível no schema ainda, será adicionado depois
     const { data: messages, error } = await supabase
       .from('messages')
-      .select('role, content, created_at')
+      .select('role, content, created_at, intent')
       .eq('conversation_id', conversationId)
       .order('created_at', { ascending: false })
       .limit(limit)
@@ -158,6 +157,7 @@ export async function getConversationHistory(
       role: msg.role,
       content: msg.content,
       created_at: msg.created_at,
+      intent: msg.intent as IntentType | null | undefined,
     }))
   } catch (error: any) {
     console.error('❌ Error in getConversationHistory:', {
@@ -194,17 +194,15 @@ export async function saveMessage(
     })
 
     // Inserir mensagem
-    // Nota: intent não está disponível no schema ainda, será adicionado depois
     const messagePayload: Record<string, any> = {
       conversation_id: conversationId,
       role,
       content,
     }
 
-    // TODO: Habilitar quando a coluna intent for adicionada ao schema
-    // if (intent) {
-    //   messagePayload.intent = intent
-    // }
+    if (intent) {
+      messagePayload.intent = intent
+    }
 
     const { error: insertError } = await supabase
       .from('messages')
@@ -229,6 +227,94 @@ export async function saveMessage(
       role,
     })
     throw error
+  }
+}
+
+/**
+ * Busca todas as mensagens do usuário desde a última resposta do assistente
+ * Útil para analisar múltiplas mensagens enviadas em sequência
+ * @param conversationId ID da conversa
+ * @returns Array de mensagens do usuário desde a última resposta do assistente
+ */
+export async function getMessagesSinceLastAssistantResponse(
+  conversationId: string
+): Promise<ConversationMessage[]> {
+  try {
+    const supabase = getSupabaseClient()
+    if (!supabase) {
+      throw new Error('Supabase client not initialized')
+    }
+
+    console.log('📬 Fetching messages since last assistant response:', {
+      conversationId,
+    })
+
+    // Buscar todas as mensagens da conversa (DESC para encontrar a última resposta primeiro)
+    const { data: allMessages, error } = await supabase
+      .from('messages')
+      .select('role, content, created_at, intent')
+      .eq('conversation_id', conversationId)
+      .order('created_at', { ascending: false })
+
+    if (error) {
+      console.error('❌ Error fetching messages:', error)
+      throw error
+    }
+
+    if (!allMessages || allMessages.length === 0) {
+      console.log('ℹ️ No messages found for conversation:', conversationId)
+      return []
+    }
+
+    // Encontrar a última mensagem do assistente
+    const lastAssistantIndex = allMessages.findIndex(
+      (msg) => msg.role === 'assistant'
+    )
+
+    // Se não há resposta do assistente, retornar todas as mensagens do usuário
+    if (lastAssistantIndex === -1) {
+      const userMessages = allMessages
+        .filter((msg) => msg.role === 'user')
+        .reverse() // Reverter para ordem cronológica
+
+      console.log('✅ No assistant response found, returning all user messages:', {
+        conversationId,
+        messageCount: userMessages.length,
+      })
+
+      return userMessages.map((msg) => ({
+        role: msg.role,
+        content: msg.content,
+        created_at: msg.created_at,
+        intent: msg.intent as IntentType | null | undefined,
+      }))
+    }
+
+    // Pegar todas as mensagens do usuário após a última resposta do assistente
+    const messagesSinceLastResponse = allMessages
+      .slice(0, lastAssistantIndex) // Mensagens antes da última resposta (mais recentes primeiro)
+      .filter((msg) => msg.role === 'user')
+      .reverse() // Reverter para ordem cronológica (mais antiga primeiro)
+
+    console.log('✅ Messages since last assistant response:', {
+      conversationId,
+      messageCount: messagesSinceLastResponse.length,
+      lastAssistantAt: allMessages[lastAssistantIndex]?.created_at,
+    })
+
+    return messagesSinceLastResponse.map((msg) => ({
+      role: msg.role,
+      content: msg.content,
+      created_at: msg.created_at,
+      intent: msg.intent as IntentType | null | undefined,
+    }))
+  } catch (error: any) {
+    console.error('❌ Error in getMessagesSinceLastAssistantResponse:', {
+      error: error.message,
+      conversationId,
+    })
+    // Retornar array vazio em caso de erro (fallback gracioso)
+    return []
   }
 }
 

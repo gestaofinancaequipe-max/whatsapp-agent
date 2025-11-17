@@ -1,8 +1,21 @@
 import { IntentResult, IntentType } from '@/lib/types/intents'
+import { classifyIntentWithLLM } from './llm-intent-classifier'
 
 interface IntentPattern {
   intent: IntentType
   patterns: RegExp[]
+}
+
+interface ConversationMessage {
+  role: string
+  content: string
+  created_at?: string
+  intent?: IntentType | null
+}
+
+interface ConversationContext {
+  lastIntent?: IntentType
+  history?: ConversationMessage[]
 }
 
 const patternList: IntentPattern[] = [
@@ -67,7 +80,12 @@ function normalizeMessage(message: string): string {
   return message.normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase()
 }
 
-export function classifyIntent(message: string): IntentResult {
+/**
+ * Classifica intent usando regex (fallback rápido)
+ * @param message Última mensagem do usuário
+ * @returns IntentResult ou null se não encontrar
+ */
+function classifyIntentWithRegex(message: string): IntentResult | null {
   try {
     const normalized = normalizeMessage(message)
 
@@ -79,13 +97,84 @@ export function classifyIntent(message: string): IntentResult {
             confidence: 0.95,
             matchedPattern: pattern.toString(),
           }
-          console.log('🎯 Intent detected:', result)
+          console.log('🎯 Intent detected (regex):', result)
           return result
         }
       }
     }
 
-    console.log('⚠️ Unknown intent for message:', message)
+    return null
+  } catch (error: any) {
+    console.error('❌ Regex classification failed:', {
+      error: error.message,
+    })
+    return null
+  }
+}
+
+/**
+ * Sistema híbrido de classificação de intenção
+ * 1. Tenta LLM primeiro (usando todas as mensagens desde última resposta)
+ * 2. Se LLM falhar → tenta regex na última mensagem
+ * 3. Se regex não encontrar → usa intent da última mensagem do contexto
+ * 4. Se nada funcionar → unknown
+ * 
+ * @param messagesSinceLastResponse Todas as mensagens do usuário desde a última resposta
+ * @param context Contexto da conversa (última intent, histórico)
+ * @returns IntentResult
+ */
+export async function classifyIntent(
+  messagesSinceLastResponse: ConversationMessage[],
+  context?: ConversationContext
+): Promise<IntentResult> {
+  try {
+    if (!messagesSinceLastResponse || messagesSinceLastResponse.length === 0) {
+      console.log('⚠️ No messages provided for classification')
+      return DEFAULT_RESULT
+    }
+
+    // Pegar última mensagem para regex fallback
+    const lastMessage = messagesSinceLastResponse[messagesSinceLastResponse.length - 1]
+    const lastMessageText = lastMessage.content
+
+    // 1. Tentar LLM primeiro (usando todas as mensagens)
+    console.log('🤖 Attempting LLM classification...')
+    const llmResult = await classifyIntentWithLLM(
+      messagesSinceLastResponse,
+      context?.history
+    )
+
+    if (llmResult) {
+      console.log('✅ LLM classification successful:', llmResult)
+      return llmResult
+    }
+
+    // 2. Se LLM falhar, tentar regex na última mensagem
+    console.log('🔄 LLM failed, trying regex fallback...')
+    const regexResult = classifyIntentWithRegex(lastMessageText)
+
+    if (regexResult) {
+      console.log('✅ Regex classification successful:', regexResult)
+      return regexResult
+    }
+
+    // 3. Se regex não encontrar, usar intent da última mensagem do contexto
+    if (context?.lastIntent && context.lastIntent !== 'unknown') {
+      console.log('♻️ Using last intent from context:', {
+        lastIntent: context.lastIntent,
+      })
+      return {
+        intent: context.lastIntent,
+        confidence: 0.7, // Menor confiança pois é inferência
+        matchedPattern: 'context_fallback',
+      }
+    }
+
+    // 4. Se nada funcionar, retornar unknown
+    console.log('⚠️ Unknown intent for messages:', {
+      messageCount: messagesSinceLastResponse.length,
+      lastMessage: lastMessageText.substring(0, 50),
+    })
     return DEFAULT_RESULT
   } catch (error: any) {
     console.error('❌ Intent classification failed:', {
@@ -94,5 +183,15 @@ export function classifyIntent(message: string): IntentResult {
     })
     return DEFAULT_RESULT
   }
+}
+
+/**
+ * Função de compatibilidade: classifica apenas uma mensagem (usa regex)
+ * Mantida para compatibilidade com código existente
+ * @deprecated Use classifyIntent() com array de mensagens
+ */
+export function classifyIntentLegacy(message: string): IntentResult {
+  const result = classifyIntentWithRegex(message)
+  return result || DEFAULT_RESULT
 }
 

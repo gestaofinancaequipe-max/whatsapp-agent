@@ -56,10 +56,10 @@ export async function processImageWithGroq(
       base64Length: base64Image.length,
     })
 
-    // 3. Construir prompt do usuário
+    // 3. Construir prompt do usuário (melhorado para incluir caption como contexto)
     const userPrompt = caption
-      ? `Analise esta foto de refeição e calcule as calorias. Legenda do usuário: "${caption}"`
-      : 'Analise esta foto de refeição e calcule as calorias estimadas de cada alimento visível.'
+      ? `Analise esta foto de refeição e calcule as calorias e proteínas. O usuário escreveu: "${caption}". Use essa informação como contexto adicional para identificar os alimentos e porções.`
+      : 'Analise esta foto de refeição e calcule as calorias e proteínas estimadas de cada alimento visível.'
 
     // 4. Enviar para Groq Vision
     const response = await groq.chat.completions.create({

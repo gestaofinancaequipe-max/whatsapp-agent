@@ -1,5 +1,5 @@
 import { transcribeAudioWithGroq } from '@/lib/services/groq'
-import { getMediaUrl } from '@/lib/services/whatsapp'
+import { getMediaUrl } from '@/lib/whatsapp'
 import { handleTextMessage } from '@/lib/handlers/text'
 import { sendWhatsAppMessage } from '@/lib/whatsapp'
 

@@ -1,10 +1,11 @@
 import { processImageWithGroq } from '@/lib/services/groq'
-import { getMediaUrl } from '@/lib/services/whatsapp'
+import { getMediaUrl } from '@/lib/whatsapp'
 import {
   getOrCreateConversation,
   saveMessage,
 } from '@/lib/services/supabase'
 import { sendWhatsAppMessage } from '@/lib/whatsapp'
+import { simulateHumanDelay } from '@/lib/utils/delay'
 
 interface ImageHandlerParams {
   senderPhone: string
@@ -43,6 +44,9 @@ export async function handleImageMessage({
   const captionText = caption || '[Foto enviada]'
   await saveMessage(conversationId, 'user', `📸 ${captionText}`)
   await saveMessage(conversationId, 'assistant', reply)
+
+  // Simular delay humano antes de enviar
+  await simulateHumanDelay()
 
   await sendWhatsAppMessage(senderPhone, reply)
 

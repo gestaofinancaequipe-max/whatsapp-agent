@@ -1,4 +1,4 @@
-import { getOrCreateConversation } from '@/lib/services/supabase'
+import { getOrCreateConversation, getMessagesSinceLastAssistantResponse } from '@/lib/services/supabase'
 import { sendWhatsAppMessage } from '@/lib/whatsapp'
 import { classifyIntent } from '@/lib/processors/intent-classifier'
 import { getOrCreateUserByPhone } from '@/lib/services/users'
@@ -8,6 +8,7 @@ import {
 } from '@/lib/services/messages'
 import { handleIntent } from '@/lib/intent-handlers'
 import { getConversationContext } from '@/lib/services/conversation-context'
+import { simulateHumanDelay } from '@/lib/utils/delay'
 
 interface TextHandlerParams {
   senderPhone: string
@@ -30,17 +31,35 @@ export async function handleTextMessage({
     const user = await getOrCreateUserByPhone(senderPhone)
     const conversationContext = await getConversationContext(conversationId)
 
-    let intentResult = classifyIntent(text)
-    if (intentResult.intent === 'unknown' && conversationContext.lastIntent) {
-      console.log('♻️ Reusing last intent from context:', {
-        lastIntent: conversationContext.lastIntent,
+    // Buscar todas as mensagens desde a última resposta do assistente
+    const messagesSinceLastResponse = await getMessagesSinceLastAssistantResponse(conversationId)
+    
+    // Se não há mensagens anteriores, adicionar a mensagem atual
+    if (messagesSinceLastResponse.length === 0) {
+      messagesSinceLastResponse.push({
+        role: 'user',
+        content: userMessageForHistory,
+        created_at: new Date().toISOString(),
       })
-      intentResult = {
-        intent: conversationContext.lastIntent,
-        confidence: intentResult.confidence,
-        matchedPattern: 'context_fallback',
+    } else {
+      // Adicionar mensagem atual ao array (caso ainda não esteja salva)
+      const lastMessage = messagesSinceLastResponse[messagesSinceLastResponse.length - 1]
+      if (lastMessage.content !== userMessageForHistory) {
+        messagesSinceLastResponse.push({
+          role: 'user',
+          content: userMessageForHistory,
+          created_at: new Date().toISOString(),
+        })
       }
     }
+
+    // Classificar intent usando todas as mensagens desde última resposta
+    const intentResult = await classifyIntent(messagesSinceLastResponse, {
+      lastIntent: conversationContext.lastIntent,
+      history: conversationContext.history,
+    })
+
+    // Salvar mensagem do usuário
     await recordUserMessage({
       conversationId,
       content: userMessageForHistory,
@@ -48,9 +67,10 @@ export async function handleTextMessage({
       user: user || undefined,
     })
 
+    // Gerar resposta
     const reply = await handleIntent({
       intentResult,
-      messageText: text,
+      messageText: text, // Usar texto original para processamento
       user: user || undefined,
       conversationId,
       history: conversationContext.history,
@@ -62,12 +82,18 @@ export async function handleTextMessage({
       senderPhone,
     })
 
+    // Salvar resposta do assistente
     await recordAssistantMessage({
       conversationId,
       content: reply,
       intent: intentResult.intent,
       user: user || undefined,
     })
+
+    // Simular delay humano antes de enviar
+    await simulateHumanDelay()
+
+    // Enviar resposta
     await sendWhatsAppMessage(senderPhone, reply)
 
     console.log('✅ Text message processed successfully:', {
