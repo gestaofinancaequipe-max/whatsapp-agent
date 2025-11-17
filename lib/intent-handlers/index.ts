@@ -8,6 +8,7 @@ import { handleQueryFoodIntent } from '@/lib/intent-handlers/query-food'
 import { handleDailySummaryIntent } from '@/lib/intent-handlers/daily-summary'
 import { handleWeeklySummaryIntent } from '@/lib/intent-handlers/weekly-summary'
 import { handleUpdateUserDataIntent } from '@/lib/intent-handlers/update-user-data'
+import { handleViewUserDataIntent } from '@/lib/intent-handlers/view-user-data'
 import { handleUpdateGoalIntent } from '@/lib/intent-handlers/update-goal'
 import { handleOnboardingIntent } from '@/lib/intent-handlers/onboarding'
 import { handleUnknownIntent } from '@/lib/intent-handlers/unknown'
@@ -40,6 +41,8 @@ export async function handleIntent(
       return handleWeeklySummaryIntent(context)
     case 'update_user_data':
       return handleUpdateUserDataIntent(context)
+    case 'view_user_data':
+      return handleViewUserDataIntent(context)
     case 'update_goal':
       return handleUpdateGoalIntent(context)
     case 'onboarding':

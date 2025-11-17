@@ -88,6 +88,7 @@ Intents disponíveis:
 - register_exercise: registrar exercício
 - query_balance: consultar calorias restantes
 - query_food_info: informação nutricional
+- view_user_data: ver dados cadastrados do usuário
 - help, greeting, daily_summary, summary_week, update_user_data, update_goal, onboarding, unknown
 
 Para register_meal:
@@ -186,6 +187,7 @@ Classifique e extraia dados.`
       'daily_summary',
       'summary_week',
       'update_user_data',
+      'view_user_data',
       'update_goal',
       'onboarding',
       'unknown',

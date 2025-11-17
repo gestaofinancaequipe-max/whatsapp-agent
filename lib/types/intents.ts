@@ -8,6 +8,7 @@ export type IntentType =
   | 'daily_summary'
   | 'summary_week'
   | 'update_user_data'
+  | 'view_user_data'
   | 'update_goal'
   | 'onboarding'
   | 'unknown'

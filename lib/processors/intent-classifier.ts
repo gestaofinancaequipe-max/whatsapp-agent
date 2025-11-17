@@ -69,6 +69,13 @@ const patternList: IntentPattern[] = [
       /\b(\d{3,4})\s?(kcal|calorias?)\b/i,
     ],
   },
+  {
+    intent: 'view_user_data',
+    patterns: [
+      /\b(meus dados|dados cadastrados|meu cadastro|ver cadastro|meu perfil|minhas informa[cç][oõ]es|dados pessoais)\b/i,
+      /\b(ver|mostrar|exibir)\s+(meus|meu)\s+(dados|cadastro|perfil)\b/i,
+    ],
+  },
 ]
 
 const DEFAULT_RESULT: IntentResult = {
