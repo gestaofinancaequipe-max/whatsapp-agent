@@ -2,7 +2,11 @@ import { IntentContext } from '@/lib/intent-handlers/types'
 import { findFoodItem } from '@/lib/services/food'
 import { logFoodFallback } from '@/lib/services/fallback-log'
 import { extractFoodNameFromQuestion } from '@/lib/utils/text'
-import { extractFoodWithLLM } from '@/lib/services/food-parser'
+import {
+  extractFoodWithLLM,
+  FoodParseResult,
+  FoodParseResultArray,
+} from '@/lib/services/food-parser'
 import { IntentType } from '@/lib/types/intents'
 
 function formatMacroLine(label: string, value: number | null) {
@@ -19,19 +23,35 @@ export async function handleQueryFoodIntent(
   }
 
   const llmResult = await extractFoodWithLLM(queryOriginal)
+  
+  // Se for array (múltiplos alimentos), usar apenas o primeiro para query
+  let foodName: string | null = null
+  if (Array.isArray(llmResult) && llmResult.length > 0) {
+    foodName = llmResult[0].food
+    if (llmResult.length > 1) {
+      // Avisar que múltiplos alimentos foram detectados
+      console.log('⚠️ Multiple foods detected in query, using first:', {
+        allFoods: llmResult.map((f) => f.food),
+        using: foodName,
+      })
+    }
+  } else if (llmResult && typeof llmResult === 'object' && 'food' in llmResult) {
+    foodName = (llmResult as FoodParseResult).food
+  }
+  
   const fallbackQuery = extractFoodNameFromQuestion(queryOriginal)
   const contextFood = extractFoodFromHistory(
     context.history,
     context.intentResult.intent
   )
   const foodQuery =
-    llmResult.food && llmResult.food !== 'UNKNOWN'
-      ? llmResult.food
+    foodName && foodName !== 'UNKNOWN'
+      ? foodName
       : contextFood || fallbackQuery
 
   console.log('🍽️ Food intent lookup:', {
     queryOriginal,
-    llmFood: llmResult.food,
+    llmFood: foodName,
     fallbackQuery,
     foodQuery,
   })
