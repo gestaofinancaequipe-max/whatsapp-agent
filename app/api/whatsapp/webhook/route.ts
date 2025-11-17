@@ -127,7 +127,15 @@ async function routeMessageByType(
   whatsappToken: string | undefined,
   apiVersion: string
 ) {
+  console.log('🔀 routeMessageByType called:', {
+    messageType: message.type,
+    senderPhone,
+    hasCredentials,
+    hasToken: !!whatsappToken,
+  })
+
   if (isImageMessage(message)) {
+    console.log('📸 Routing to image handler')
     if (!hasCredentials || !whatsappToken) {
       console.error('❌ Cannot process image: credentials missing')
       return
@@ -144,6 +152,7 @@ async function routeMessageByType(
   }
 
   if (isAudioMessage(message)) {
+    console.log('🎤 Routing to audio handler')
     if (!hasCredentials || !whatsappToken) {
       console.error('❌ Cannot process audio: credentials missing')
       return
@@ -159,6 +168,9 @@ async function routeMessageByType(
   }
 
   if (isTextMessage(message) && message.text?.body) {
+    console.log('💬 Routing to text handler:', {
+      textPreview: message.text.body.substring(0, 50),
+    })
     if (!hasCredentials || !whatsappToken) {
       console.error('❌ Cannot process text: credentials missing')
       return
@@ -178,6 +190,12 @@ async function routeMessageByType(
  * POST - Receber mensagens do WhatsApp via webhook
  */
 export async function POST(request: NextRequest) {
+  // LOG INICIAL ABSOLUTO - deve aparecer SEMPRE
+  console.log('🚀 ===== WEBHOOK POST CALLED =====')
+  console.log('🚀 Timestamp:', new Date().toISOString())
+  console.log('🚀 URL:', request.url)
+  console.log('🚀 Method:', request.method)
+
   const startTime = Date.now()
   const requestId = `req_${Date.now()}_${Math.random().toString(36).substring(7)}`
 
@@ -190,6 +208,7 @@ export async function POST(request: NextRequest) {
   const { hasCredentials, whatsappToken } = validateWhatsAppCredentials()
 
   try {
+    console.log('🔍 Starting to parse body...', { requestId })
     const parseStart = Date.now()
     const body = await request.json()
     console.log('✅ Body parsed:', {
@@ -197,8 +216,11 @@ export async function POST(request: NextRequest) {
       parseTime: Date.now() - parseStart,
       hasEntry: !!body.entry,
       entryLength: body.entry?.length,
+      bodyType: typeof body,
+      bodyKeys: body ? Object.keys(body) : [],
     })
 
+    console.log('🔍 Extracting message from body...', { requestId })
     const extractStart = Date.now()
     const message = extractMessage(body)
     console.log('✅ Message extracted:', {
@@ -207,7 +229,26 @@ export async function POST(request: NextRequest) {
       hasMessage: !!message,
       messageType: message?.type,
       messageFrom: message?.from,
+      messageId: message?.id,
     })
+
+    // Log detalhado se não há mensagem
+    if (!message) {
+      console.log('⚠️ DETAILED - No message extracted:', {
+        requestId,
+        bodyStructure: {
+          hasObject: typeof body === 'object',
+          hasEntry: !!body.entry,
+          entryLength: body.entry?.length,
+          firstEntryId: body.entry?.[0]?.id,
+          firstChangeField: body.entry?.[0]?.changes?.[0]?.field,
+          hasMessages: !!body.entry?.[0]?.changes?.[0]?.value?.messages,
+          hasStatuses: !!body.entry?.[0]?.changes?.[0]?.value?.statuses,
+          messagesCount: body.entry?.[0]?.changes?.[0]?.value?.messages?.length || 0,
+          statusesCount: body.entry?.[0]?.changes?.[0]?.value?.statuses?.length || 0,
+        },
+      })
+    }
 
     if (!message) {
       console.log('⚠️ No valid message extracted (likely status update):', {
@@ -232,6 +273,12 @@ export async function POST(request: NextRequest) {
     const senderPhone = message.from
     const apiVersion = process.env.WHATSAPP_API_VERSION || 'v21.0'
 
+    console.log('🔍 Routing message to handler...', {
+      requestId,
+      senderPhone,
+      messageType: message.type,
+    })
+
     const handlerStart = Date.now()
     try {
       await routeMessageByType(
@@ -255,18 +302,39 @@ export async function POST(request: NextRequest) {
         handlerTime: Date.now() - handlerStart,
         totalTime: Date.now() - startTime,
       })
+      // Log mais detalhado do erro
+      console.error('❌ Handler error details:', {
+        requestId,
+        errorName: handlerError.name,
+        errorMessage: handlerError.message,
+        errorStack: handlerError.stack?.substring(0, 500),
+      })
     }
+
+    console.log('✅ ===== WEBHOOK POST FINISHED =====', {
+      requestId,
+      totalTime: Date.now() - startTime,
+    })
+
+    const responseTime = Date.now() - startTime
+    console.log('✅ Returning 200 OK:', {
+      requestId,
+      totalTime: responseTime,
+    })
 
     return NextResponse.json({ success: true }, { status: 200 })
   } catch (error: any) {
+    console.error('❌ ===== WEBHOOK POST ERROR =====')
     console.error('❌ Error processing webhook:', {
       requestId,
       error: error.message,
-      stack: error.stack,
+      errorName: error.name,
+      stack: error.stack?.substring(0, 1000),
       totalTime: Date.now() - startTime,
     })
 
     // Sempre retornar 200 para evitar retries infinitos
+    console.log('✅ Returning 200 OK despite error (to prevent retries)')
     return NextResponse.json(
       { success: false, error: 'Internal error' },
       { status: 200 }

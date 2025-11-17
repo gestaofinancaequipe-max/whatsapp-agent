@@ -203,17 +203,30 @@ export async function getMediaUrl(
  * @returns Mensagem extraída ou null se não encontrar
  */
 export function extractMessage(body: WebhookPayload): WhatsAppMessage | null {
+  console.log('🔍 extractMessage called')
   try {
     // Estrutura do webhook do Meta pode variar:
     // - Mensagens: body.entry[0].changes[0].value.messages[0]
     // - Status: body.entry[0].changes[0].value.statuses[0]
     // - Outros eventos podem vir em structures diferentes
 
+    console.log('🔍 extractMessage - Checking body structure:', {
+      hasBody: !!body,
+      hasEntry: !!body.entry,
+      entryLength: body.entry?.length,
+    })
+
     const entry = body.entry?.[0]
     if (!entry) {
       console.log('⚠️ No entry found in webhook payload')
       return null
     }
+
+    console.log('🔍 extractMessage - Found entry:', {
+      entryId: entry.id,
+      hasChanges: !!entry.changes,
+      changesLength: entry.changes?.length,
+    })
 
     const changes = entry.changes
     if (!changes || changes.length === 0) {
