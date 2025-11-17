@@ -25,33 +25,112 @@ export async function findFoodItem(query: string): Promise<FoodItem | null> {
   console.log('🔎 Searching food item:', { query, normalized })
 
   try {
-    const { data, error } = await supabase
+    // Estratégia de busca em cascata: exato -> starts with -> palavras completas -> parcial com validação
+    
+    // 1. Match exato (case-insensitive)
+    const { data: exactMatch } = await supabase
       .from('food_items')
       .select(
         'id, name, name_normalized, aliases, serving_size, serving_size_grams, calories, protein_g, carbs_g, fat_g, fiber_g, common_measures, usage_count'
       )
-      .or(
-        `name.ilike.%${normalized}%,name_normalized.ilike.%${normalized}%,aliases.cs.{${normalized}}`
-      )
+      .or(`name.ilike.${normalized},name_normalized.ilike.${normalized},aliases.cs.{${normalized}}`)
       .order('usage_count', { ascending: false })
       .limit(1)
-      .single()
+      .maybeSingle()
 
-    console.log('🔎 Food search result:', {
-      query,
-      found: !!data,
-      error,
-    })
-
-    if (error && error.code !== 'PGRST116') {
-      console.error('❌ Error searching food_items:', {
+    if (exactMatch) {
+      console.log('🔎 Food search result (exact match):', {
         query,
-        error,
+        found: true,
+        foodName: exactMatch.name,
+        matchType: 'exact',
       })
-      throw error
+      return exactMatch
     }
 
-    return data || null
+    // 2. Match que começa com o termo
+    const { data: startsWithMatch } = await supabase
+      .from('food_items')
+      .select(
+        'id, name, name_normalized, aliases, serving_size, serving_size_grams, calories, protein_g, carbs_g, fat_g, fiber_g, common_measures, usage_count'
+      )
+      .or(`name.ilike.${normalized}%,name_normalized.ilike.${normalized}%`)
+      .order('usage_count', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+
+    if (startsWithMatch) {
+      console.log('🔎 Food search result (starts with match):', {
+        query,
+        found: true,
+        foodName: startsWithMatch.name,
+        matchType: 'starts_with',
+      })
+      return startsWithMatch
+    }
+
+    // 3. Para queries curtas (<= 5 caracteres), não fazer busca parcial
+    // Isso evita matches ruins como "pera" encontrando "temperada"
+    const isShortQuery = normalized.length <= 5
+    
+    if (isShortQuery) {
+      console.log('🔎 Food search result:', {
+        query,
+        found: false,
+        matchType: 'none',
+        reason: 'short_query_no_exact_match_prevent_false_positive',
+      })
+      return null
+    }
+    
+    // 4. Match parcial com palavras completas (apenas para queries longas)
+    const words = normalized.split(/\s+/).filter(w => w.length >= 3) // Palavras com pelo menos 3 caracteres
+    
+    if (words.length > 0) {
+      // Buscar candidatos que contenham as palavras
+      const { data: candidates } = await supabase
+        .from('food_items')
+        .select(
+          'id, name, name_normalized, aliases, serving_size, serving_size_grams, calories, protein_g, carbs_g, fat_g, fiber_g, common_measures, usage_count'
+        )
+        .or(
+          words.map(word => `name_normalized.ilike.%${word}%`).join(',')
+        )
+        .order('usage_count', { ascending: false })
+        .limit(20)
+
+      if (candidates && candidates.length > 0) {
+        // Filtrar candidatos: procurar palavras completas (word boundaries)
+        for (const candidate of candidates) {
+          const candidateName = (candidate.name_normalized || candidate.name).toLowerCase()
+          
+          // Verificar se todas as palavras estão presentes como palavras completas
+          const hasAllWords = words.every(word => {
+            const regex = new RegExp(`\\b${word}\\b`, 'i')
+            return regex.test(candidateName)
+          })
+
+          if (hasAllWords) {
+            console.log('🔎 Food search result (full words match):', {
+              query,
+              found: true,
+              foodName: candidate.name,
+              matchType: 'full_words',
+            })
+            return candidate
+          }
+        }
+      }
+    }
+
+    // Se não encontrou nada, retornar null
+    console.log('🔎 Food search result:', {
+      query,
+      found: false,
+      matchType: 'none',
+    })
+
+    return null
   } catch (error: any) {
     console.error('❌ findFoodItem failed:', {
       error: error.message,
