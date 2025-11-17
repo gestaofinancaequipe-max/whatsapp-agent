@@ -9,6 +9,7 @@ import {
 // Interface para a estrutura completa do webhook payload
 interface WebhookPayload {
   entry?: Array<{
+    id?: string
     changes?: Array<{
       value?: {
         messages?: Array<{
