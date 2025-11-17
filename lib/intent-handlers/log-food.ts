@@ -216,6 +216,34 @@ export async function handleLogFoodIntent(
   const fat = food.fat_g ? food.fat_g * (ratio || 1) : null
   const fiber = food.fiber_g ? food.fiber_g * (ratio || 1) : null
 
+  console.log('🧮 Single food calculation:', {
+    food: food.name,
+    foodId: food.id,
+    quantity: {
+      value: quantityValue,
+      unit: quantityUnit || 'porção padrão',
+    },
+    conversion: {
+      grams: grams,
+      servingSizeGrams: food.serving_size_grams,
+      ratio: ratio.toFixed(3),
+    },
+    baseValues: {
+      calories: food.calories,
+      protein_g: food.protein_g,
+      carbs_g: food.carbs_g,
+      fat_g: food.fat_g,
+      servingSizeGrams: food.serving_size_grams,
+    },
+    calculatedValues: {
+      calories: calories.toFixed(1),
+      protein_g: protein.toFixed(1),
+      carbs_g: carbs ? carbs.toFixed(1) : null,
+      fat_g: fat ? fat.toFixed(1) : null,
+      fiber_g: fiber ? fiber.toFixed(1) : null,
+    },
+  })
+
   const mealDescription = `${quantityValue} ${
     quantityUnit || 'porção'
   } de ${food.name}`
@@ -302,6 +330,34 @@ async function handleMultipleFoods(
     const fat = food.fat_g ? food.fat_g * (ratio || 1) : null
     const fiber = food.fiber_g ? food.fiber_g * (ratio || 1) : null
 
+    console.log('🧮 Food item calculation:', {
+      food: food.name,
+      foodId: food.id,
+      quantity: {
+        value: quantityValue,
+        unit: quantityUnit || 'porção padrão',
+      },
+      conversion: {
+        grams: grams,
+        servingSizeGrams: food.serving_size_grams,
+        ratio: ratio.toFixed(3),
+      },
+      baseValues: {
+        calories: food.calories,
+        protein_g: food.protein_g,
+        carbs_g: food.carbs_g,
+        fat_g: food.fat_g,
+        servingSizeGrams: food.serving_size_grams,
+      },
+      calculatedValues: {
+        calories: calories.toFixed(1),
+        protein_g: protein.toFixed(1),
+        carbs_g: carbs ? carbs.toFixed(1) : null,
+        fat_g: fat ? fat.toFixed(1) : null,
+        fiber_g: fiber ? fiber.toFixed(1) : null,
+      },
+    })
+
     processedFoods.push({
       food,
       quantity: quantityValue,
@@ -340,6 +396,25 @@ async function handleMultipleFoods(
     (sum, f) => sum + (f.grams || 0),
     0
   )
+
+  console.log('🧮 Total meal calculation:', {
+    itemCount: processedFoods.length,
+    items: processedFoods.map((f) => ({
+      food: f.food.name,
+      quantity: `${f.quantity} ${f.unit || 'porção'}`,
+      grams: f.grams,
+      calories: f.calories.toFixed(1),
+      protein_g: f.protein.toFixed(1),
+    })),
+    totals: {
+      calories: totalCalories.toFixed(1),
+      protein_g: totalProtein.toFixed(1),
+      carbs_g: totalCarbs.toFixed(1),
+      fat_g: totalFat.toFixed(1),
+      fiber_g: totalFiber.toFixed(1),
+      totalGrams: totalGrams > 0 ? totalGrams.toFixed(1) : null,
+    },
+  })
 
   // Criar descrição da refeição
   const mealItems = processedFoods.map((f) => {
