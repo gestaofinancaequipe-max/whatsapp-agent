@@ -10,7 +10,6 @@ export interface UserRecord {
   weight_kg: number | null
   height_cm: number | null
   age: number | null
-  onboarding_completed: boolean
   last_interaction_at: string | null
   last_user_message_at: string | null
 }
@@ -54,7 +53,6 @@ export async function getOrCreateUserByPhone(
         phone_number: phoneNumber,
         goal_calories: DEFAULT_GOAL_CALORIES,
         goal_protein_g: DEFAULT_GOAL_PROTEIN,
-        onboarding_completed: false,
         created_at: timestamp,
         updated_at: timestamp,
         last_interaction_at: timestamp,

@@ -174,8 +174,8 @@ export async function handleUpdateUserDataIntent(
   if (Object.keys(payload).length === 0) {
     const missing = getMissingFields(context.user)
     
-    // Se está em onboarding, mostrar campos faltantes
-    if (missing.length > 0 && !context.user.onboarding_completed) {
+    // Se está em onboarding (faltam campos), mostrar campos faltantes
+    if (missing.length > 0) {
       return (
         '📝 Vamos terminar seu cadastro.\n' +
         'Me envie (um por mensagem):\n' +
@@ -189,17 +189,15 @@ export async function handleUpdateUserDataIntent(
   // Atualizar dados no Supabase
   await upsertUserData(context.user.id, payload)
 
-  // Verificar se completou o onboarding
+  // Verificar se completou todos os campos obrigatórios
   const updatedUser = {
     ...context.user,
     ...payload,
   }
   const refreshedMissing = getMissingFields(updatedUser)
 
-  // Se completou todos os campos, marcar onboarding como completo
-  if (refreshedMissing.length === 0 && !context.user.onboarding_completed) {
-    await upsertUserData(context.user.id, { onboarding_completed: true })
-    
+  // Se completou todos os campos obrigatórios
+  if (refreshedMissing.length === 0) {
     return (
       '✅ Perfil configurado!\n' +
       (payload.user_name || context.user.user_name
@@ -227,7 +225,7 @@ export async function handleUpdateUserDataIntent(
     )
   }
 
-  // Se ainda faltam campos (onboarding incompleto)
+  // Se ainda faltam campos obrigatórios
   if (refreshedMissing.length > 0) {
     return (
       '✅ Dados atualizados!\n' +

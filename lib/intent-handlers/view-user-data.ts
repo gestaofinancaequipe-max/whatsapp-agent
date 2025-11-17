@@ -1,4 +1,21 @@
 import { IntentContext } from '@/lib/intent-handlers/types'
+import { UserRecord } from '@/lib/services/users'
+
+/**
+ * Identifica quais campos estão faltando no perfil do usuário
+ */
+function getMissingFields(user: UserRecord | null | undefined): string[] {
+  if (!user) return []
+  
+  const missing: string[] = []
+  if (!user.weight_kg) missing.push('peso (kg)')
+  if (!user.height_cm) missing.push('altura (cm)')
+  if (!user.age) missing.push('idade')
+  if (!user.gender) missing.push('gênero')
+  if (!user.goal_calories) missing.push('meta calórica (kcal)')
+  // user_name é opcional, não incluir em missing
+  return missing
+}
 
 export async function handleViewUserDataIntent(
   context: IntentContext
@@ -69,8 +86,9 @@ export async function handleViewUserDataIntent(
 
   sections.push(goals.join('\n'))
 
-  // Status do cadastro
-  sections.push('\n' + (user.onboarding_completed ? '✅ Cadastro completo' : '⚠️ Cadastro incompleto'))
+  // Status do cadastro (baseado em campos faltantes)
+  const missing = getMissingFields(user)
+  sections.push('\n' + (missing.length === 0 ? '✅ Cadastro completo' : '⚠️ Cadastro incompleto'))
 
   // Instruções para atualizar
   sections.push('\n💡 Para atualizar, envie:')

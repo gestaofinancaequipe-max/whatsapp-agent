@@ -1,5 +1,21 @@
 import { IntentContext } from '@/lib/intent-handlers/types'
-import { upsertUserData } from '@/lib/services/users'
+import { UserRecord } from '@/lib/services/users'
+
+/**
+ * Identifica quais campos estão faltando no perfil do usuário
+ */
+function getMissingFields(user: UserRecord | null | undefined): string[] {
+  if (!user) return []
+  
+  const missing: string[] = []
+  if (!user.weight_kg) missing.push('peso (kg)')
+  if (!user.height_cm) missing.push('altura (cm)')
+  if (!user.age) missing.push('idade')
+  if (!user.gender) missing.push('gênero')
+  if (!user.goal_calories) missing.push('meta calórica (kcal)')
+  // user_name é opcional, não incluir em missing
+  return missing
+}
 
 const FEATURE_LIST = [
   '🍽️ Registrar refeições com calorias e proteínas',
@@ -36,16 +52,12 @@ export async function handleGreetingIntent({
 }: IntentContext): Promise<string> {
   const displayName = getUserDisplayName(user?.phone_number)
 
-  if (user && !user.onboarding_completed) {
-    await upsertUserData(user.id, {
-      onboarding_completed: false,
-    })
-  }
-
-  const baseGreeting = `👋 Olá, ${displayName}! Estou aqui para cuidar do seu diário nutricional.`
-  const features = `\n\n✨ Posso te ajudar com:\n${buildFeatureText()}`
-  const onboarding =
-    user && !user.onboarding_completed ? buildOnboardingPrompt() : ''
+  const baseGreeting = `👋 Olá! Estou aqui para cuidar do seu diário nutricional.`
+  const features = `\n\nPosso te ajudar com:\n${buildFeatureText()}`
+  
+  // Mostrar prompt de onboarding se faltam campos obrigatórios
+  const missing = getMissingFields(user)
+  const onboarding = missing.length > 0 ? buildOnboardingPrompt() : ''
 
   return `${baseGreeting}${features}${onboarding}\n\nDigite "ajuda" para ver todos os comandos.`
 }
