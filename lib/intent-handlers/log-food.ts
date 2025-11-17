@@ -98,10 +98,12 @@ function normalizeUnitForSearch(unit: string): string {
     .trim()
     .replace(/ões$/, 'ão') // colheres -> colher
     .replace(/s$/, '') // remove plural
+    .replace(/[_\s]+/g, ' ') // substitui underscores e múltiplos espaços por espaço único
+    .trim()
 }
 
 /**
- * Busca medida em common_measures com normalização
+ * Busca medida em common_measures com normalização melhorada
  */
 function findMeasureInCommonMeasures(
   measures: Array<{ name: string; grams: number }>,
@@ -109,13 +111,42 @@ function findMeasureInCommonMeasures(
 ): { name: string; grams: number } | null {
   const normalizedUnit = normalizeUnitForSearch(unit)
 
-  // Busca exata primeiro
-  const exactMatch = measures.find((m) =>
-    normalizeUnitForSearch(m.name) === normalizedUnit
-  )
-  if (exactMatch) return exactMatch
+  // Extrair palavra-chave principal da unidade (ex: "colher" de "colher de sopa")
+  const unitKeywords = normalizedUnit
+    .split(/\s+/)
+    .filter((word) => word.length > 2 && !['de', 'da', 'do', 'em'].includes(word))
 
-  // Busca por inclusão (flexível)
+  console.log('🔍 Searching measure in common_measures:', {
+    originalUnit: unit,
+    normalizedUnit,
+    unitKeywords,
+    availableMeasures: measures.map((m) => m.name),
+  })
+
+  // Busca exata primeiro
+  const exactMatch = measures.find((m) => {
+    const normalizedMeasureName = normalizeUnitForSearch(m.name)
+    return normalizedMeasureName === normalizedUnit
+  })
+  if (exactMatch) {
+    console.log('✅ Exact match found:', { measure: exactMatch.name, grams: exactMatch.grams })
+    return exactMatch
+  }
+
+  // Busca por palavra-chave (ex: "colher" encontra "colher_sopa", "colher de sopa")
+  if (unitKeywords.length > 0) {
+    const keywordMatch = measures.find((m) => {
+      const normalizedMeasureName = normalizeUnitForSearch(m.name)
+      // Verifica se alguma palavra-chave está no nome da medida
+      return unitKeywords.some((keyword) => normalizedMeasureName.includes(keyword))
+    })
+    if (keywordMatch) {
+      console.log('✅ Keyword match found:', { measure: keywordMatch.name, grams: keywordMatch.grams })
+      return keywordMatch
+    }
+  }
+
+  // Busca por inclusão bidirecional (flexível)
   const flexibleMatch = measures.find((m) => {
     const normalizedMeasureName = normalizeUnitForSearch(m.name)
     return (
@@ -123,8 +154,12 @@ function findMeasureInCommonMeasures(
       normalizedUnit.includes(normalizedMeasureName)
     )
   })
-  if (flexibleMatch) return flexibleMatch
+  if (flexibleMatch) {
+    console.log('✅ Flexible match found:', { measure: flexibleMatch.name, grams: flexibleMatch.grams })
+    return flexibleMatch
+  }
 
+  console.log('❌ No measure found in common_measures')
   return null
 }
 
@@ -245,6 +280,17 @@ async function extractMeasureInGrams(
       return food.serving_size_grams * quantity
     }
     return null
+  }
+
+  // Se a unidade já é gramas (g, grama, gramas), usar diretamente sem conversão
+  const normalizedUnit = unit.toLowerCase().trim()
+  if (normalizedUnit === 'g' || normalizedUnit === 'grama' || normalizedUnit === 'gramas' || normalizedUnit === 'gram') {
+    console.log('✅ Unit is already grams, using directly:', {
+      food: food.name,
+      quantity,
+      totalGrams: quantity,
+    })
+    return quantity
   }
 
   // Tentar buscar em common_measures primeiro
