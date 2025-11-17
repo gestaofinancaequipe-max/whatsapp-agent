@@ -178,27 +178,61 @@ async function routeMessageByType(
  * POST - Receber mensagens do WhatsApp via webhook
  */
 export async function POST(request: NextRequest) {
+  const startTime = Date.now()
+  const requestId = `req_${Date.now()}_${Math.random().toString(36).substring(7)}`
+
+  console.log('📨 Webhook POST received:', {
+    requestId,
+    timestamp: new Date().toISOString(),
+    path: '/api/whatsapp/webhook',
+  })
+
   const { hasCredentials, whatsappToken } = validateWhatsAppCredentials()
 
   try {
+    const parseStart = Date.now()
     const body = await request.json()
-    console.log('📨 Webhook POST received')
+    console.log('✅ Body parsed:', {
+      requestId,
+      parseTime: Date.now() - parseStart,
+      hasEntry: !!body.entry,
+      entryLength: body.entry?.length,
+    })
 
+    const extractStart = Date.now()
     const message = extractMessage(body)
+    console.log('✅ Message extracted:', {
+      requestId,
+      extractTime: Date.now() - extractStart,
+      hasMessage: !!message,
+      messageType: message?.type,
+      messageFrom: message?.from,
+    })
 
     if (!message) {
-      console.log('⚠️ No valid message extracted (likely status update)')
+      console.log('⚠️ No valid message extracted (likely status update):', {
+        requestId,
+        bodyKeys: Object.keys(body),
+      })
       return NextResponse.json({ success: true }, { status: 200 })
     }
 
-    console.log('💬 Message received:', {
+    const textPreview = isTextMessage(message) && message.text
+      ? message.text.body.substring(0, 100)
+      : undefined
+
+    console.log('💬 Processing message:', {
+      requestId,
       from: message.from,
       type: message.type,
+      textPreview,
+      timestamp: message.timestamp,
     })
 
     const senderPhone = message.from
     const apiVersion = process.env.WHATSAPP_API_VERSION || 'v21.0'
 
+    const handlerStart = Date.now()
     try {
       await routeMessageByType(
         message,
@@ -207,17 +241,29 @@ export async function POST(request: NextRequest) {
         whatsappToken,
         apiVersion
       )
+      console.log('✅ Handler completed:', {
+        requestId,
+        handlerTime: Date.now() - handlerStart,
+        totalTime: Date.now() - startTime,
+      })
     } catch (handlerError: any) {
       console.error('❌ Handler error:', {
+        requestId,
         error: handlerError.message,
+        stack: handlerError.stack,
         senderPhone,
+        handlerTime: Date.now() - handlerStart,
+        totalTime: Date.now() - startTime,
       })
     }
 
     return NextResponse.json({ success: true }, { status: 200 })
   } catch (error: any) {
     console.error('❌ Error processing webhook:', {
+      requestId,
       error: error.message,
+      stack: error.stack,
+      totalTime: Date.now() - startTime,
     })
 
     // Sempre retornar 200 para evitar retries infinitos
