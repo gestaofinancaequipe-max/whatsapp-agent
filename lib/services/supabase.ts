@@ -107,6 +107,7 @@ interface ConversationMessage {
   role: string
   content: string
   created_at: string
+  intent?: string | null // Opcional até a coluna ser adicionada ao schema
 }
 
 export async function getConversationHistory(
@@ -125,9 +126,10 @@ export async function getConversationHistory(
     })
 
     // Buscar últimas N mensagens (DESC) para depois reverter
+    // Nota: intent não está disponível no schema ainda, será adicionado depois
     const { data: messages, error } = await supabase
       .from('messages')
-      .select('role, content, created_at, intent')
+      .select('role, content, created_at')
       .eq('conversation_id', conversationId)
       .order('created_at', { ascending: false })
       .limit(limit)
@@ -191,15 +193,17 @@ export async function saveMessage(
     })
 
     // Inserir mensagem
+    // Nota: intent não está disponível no schema ainda, será adicionado depois
     const messagePayload: Record<string, any> = {
       conversation_id: conversationId,
       role,
       content,
     }
 
-    if (intent) {
-      messagePayload.intent = intent
-    }
+    // TODO: Habilitar quando a coluna intent for adicionada ao schema
+    // if (intent) {
+    //   messagePayload.intent = intent
+    // }
 
     const { error: insertError } = await supabase
       .from('messages')
