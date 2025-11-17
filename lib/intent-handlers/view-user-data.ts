@@ -12,6 +12,21 @@ export async function handleViewUserDataIntent(
   // Montar seções de dados
   const sections: string[] = ['👤 Seus Dados Cadastrados\n']
 
+  // Dados pessoais
+  const personalData: string[] = []
+  if (user.user_name) {
+    personalData.push(`👋 Nome: ${user.user_name}`)
+  }
+  
+  if (user.gender) {
+    personalData.push(`⚧️ Gênero: ${user.gender}`)
+  }
+
+  if (personalData.length > 0) {
+    sections.push(personalData.join('\n'))
+    sections.push('') // Linha em branco
+  }
+
   // Dados físicos
   const physicalData: string[] = []
   if (user.weight_kg) {
@@ -59,10 +74,13 @@ export async function handleViewUserDataIntent(
 
   // Instruções para atualizar
   sections.push('\n💡 Para atualizar, envie:')
+  sections.push('• "Meu nome é João" para atualizar nome')
+  sections.push('• "Gênero masculino" para atualizar gênero')
   sections.push('• "Peso 85kg" para atualizar peso')
-  sections.push('• "Altura 180cm" para atualizar altura')
+  sections.push('• "Altura 180cm" ou "1,80m" para atualizar altura')
   sections.push('• "Idade 30 anos" para atualizar idade')
-  sections.push('• "Minha meta é 2000" para atualizar meta de calorias')
+  sections.push('• "Meta 2000 kcal" para atualizar meta de calorias')
+  sections.push('• "Proteína 150g" para atualizar meta de proteína')
 
   return sections.join('\n')
 }

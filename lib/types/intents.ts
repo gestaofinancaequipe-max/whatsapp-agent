@@ -21,5 +21,15 @@ export interface IntentResult {
     exercicio?: string // Para register_exercise
     duracao?: string | null
   }>
+  user_data?: {
+    // Dados estruturados para update_user_data
+    user_name?: string | null
+    gender?: string | null // 'masculino' ou 'feminino'
+    weight_kg?: number
+    height_cm?: number // sempre em cm (LLM converte se necessário)
+    age?: number
+    goal_calories?: number
+    goal_protein_g?: number
+  }
 }
 

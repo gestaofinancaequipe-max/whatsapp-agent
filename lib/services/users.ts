@@ -3,6 +3,8 @@ import { getSupabaseClient } from '@/lib/services/supabase'
 export interface UserRecord {
   id: string
   phone_number: string
+  user_name: string | null
+  gender: string | null // 'masculino' ou 'feminino'
   goal_calories: number | null
   goal_protein_g: number | null
   weight_kg: number | null

@@ -70,6 +70,13 @@ export async function classifyIntentWithLLM(
           .join('\n')
       : 'Nenhum histórico disponível'
 
+    // Obter última mensagem do assistente para contexto
+    const lastAssistantMessage = recentHistory
+      ? recentHistory
+          .filter((msg) => msg.role === 'assistant')
+          .slice(-1)[0] // Última mensagem do assistente
+      : null
+
     console.log('🤖 Classifying intent with LLM:', {
       messageCount: messages.length,
       totalLength: userMessagesText.length,
@@ -77,9 +84,16 @@ export async function classifyIntentWithLLM(
       userHistoryCount: recentHistory
         ? recentHistory.filter((msg) => msg.role === 'user').length
         : 0,
+      hasLastAssistantMessage: !!lastAssistantMessage,
     })
 
     const systemPrompt = `Você é um classificador de intenções para um bot nutricional no WhatsApp.
+
+CONTEXTO GEOGRÁFICO:
+- Estamos no Brasil, onde vírgula (,) é usada como separador decimal
+- Exemplos: "1,75m" = 1.75 metros, "82,5kg" = 82.5 kg
+- Aceite ambos os formatos (vírgula e ponto), mas prefira vírgula quando ambíguo
+- Números como "1,7" ou "1.7" podem ser altura em metros (converter para cm)
 
 Classifique a intenção e extraia dados estruturados.
 
@@ -93,7 +107,7 @@ Intents disponíveis:
 - help, greeting, daily_summary, summary_week, unknown
 
 IMPORTANTE - update_user_data:
-- Use para atualizar DADOS PESSOAIS (peso em kg, altura em cm, idade em anos)
+- Use para atualizar DADOS PESSOAIS (nome, gênero, peso em kg, altura em cm, idade em anos)
 - Use para atualizar METAS NUTRICIONAIS (calorias diárias, proteína diária)
 - Também usado para onboarding/cadastro inicial quando o usuário está preenchendo seus dados pela primeira vez
 - Exemplos: "Peso 82kg", "Altura 175cm", "mudar peso para 70 quilos", "idade 30 anos", "Meta 1800 kcal", "Proteína 150g"
@@ -115,21 +129,41 @@ Para register_exercise:
   * "30 min de esteira e 20 min de bicicleta" → [{"exercicio":"esteira","duracao":"30 min"},{"exercicio":"bicicleta","duracao":"20 min"}]
 
 Para update_user_data:
-- Use quando o usuário quer atualizar peso, altura, idade, meta calórica ou meta de proteína
-- Exemplos: "Peso 82kg", "mudar peso para 70 quilos", "Altura 175cm", "idade 30 anos", "Meta 1800 kcal", "Proteína 150g"
-- Use também para onboarding/cadastro inicial quando o usuário está preenchendo dados pela primeira vez
+- EXTRAIA dados estruturados: nome (opcional), gênero (masculino/feminino), peso (kg), altura (cm), idade (anos), meta calórica (kcal), meta de proteína (g)
+- CONVERTA altura para cm se estiver em metros (ex: 1.7m → 170cm, 1,75m → 175cm)
+- Números entre 1.0-2.5 são altura em metros (converter para cm multiplicando por 100)
+- INFIRA valores de números soltos quando em contexto:
+  * "tenho 32, 170" → idade: 32, altura: 170cm
+  * "32, 1.7" → idade: 32, altura: 170cm (1.7m convertido)
+  * "1,75" → altura: 175cm (se entre 1.0-2.5, é metros)
+- Números entre 15-100 são idade
+- Números entre 100-250 são altura em cm
+- Gênero: detecte "masculino", "feminino", "m", "f", "homem", "mulher"
+- Nome: extraia quando mencionado explicitamente (ex: "meu nome é João", "sou a Maria")
+- IMPORTANTE: Quando o usuário está atualizando apenas 1 campo, inclua APENAS esse campo no JSON
+- NÃO inclua campos null ou undefined - omita completamente campos que não foram mencionados
+- Exemplos de extração:
+  * "tenho 32, 170" → {"age": 32, "height_cm": 170}
+  * "1,7m" ou "1.7m" → {"height_cm": 170}
+  * "Peso 82kg" → {"weight_kg": 82} (APENAS peso, não inclua outros campos)
+  * "Meta 1800 kcal" → {"goal_calories": 1800} (APENAS meta calórica)
+  * "Proteína 150g" → {"goal_protein_g": 150} (APENAS proteína)
+  * "sou masculino" → {"gender": "masculino"} (APENAS gênero)
+  * "meu nome é João" → {"user_name": "João"} (APENAS nome)
 
 Retorne JSON:
-{
-  "intent": "register_meal",
-  "confidence": 0.95,
-  "items": [{"alimento":"...","quantidade":"..."}]
-}`
+- Para register_meal: {"intent": "register_meal", "confidence": 0.95, "items": [{"alimento":"...","quantidade":"..."}]}
+- Para update_user_data: {"intent": "update_user_data", "confidence": 0.95, "user_data": {"weight_kg": 82}} (exemplo com apenas 1 campo)
+- Para update_user_data com múltiplos campos: {"intent": "update_user_data", "confidence": 0.95, "user_data": {"age": 32, "height_cm": 170}} (exemplo com 2 campos)
+- Inclua apenas os campos que foram mencionados ou inferidos pelo usuário
+- Se não conseguir extrair um campo, não inclua no JSON (não use null)`
 
     const userPrompt = `Mensagens do usuário:
 ${userMessagesText}
 
-Contexto (mensagens anteriores do usuário):
+${lastAssistantMessage 
+  ? `Última mensagem do assistente (contexto importante):\n${lastAssistantMessage.content}\n\n`
+  : ''}Contexto (mensagens anteriores do usuário):
 ${userMessages}
 
 Classifique e extraia dados.`
@@ -185,6 +219,15 @@ Classifique e extraia dados.`
         exercicio?: string
         duracao?: string | null
       }>
+      user_data?: {
+        user_name?: string | null
+        gender?: string | null
+        weight_kg?: number
+        height_cm?: number
+        age?: number
+        goal_calories?: number
+        goal_protein_g?: number
+      }
       reasoning?: string
     }
 
@@ -213,6 +256,7 @@ Classifique e extraia dados.`
       confidence: Math.max(0, Math.min(1, parsed.confidence || 0.8)),
       matchedPattern: 'llm_classification',
       items: parsed.items || [],
+      user_data: parsed.user_data,
     }
 
     console.log('✅ LLM intent classified:', {
@@ -220,6 +264,7 @@ Classifique e extraia dados.`
       confidence: result.confidence,
       itemsCount: result.items?.length || 0,
       items: result.items,
+      user_data: result.user_data,
       reasoning: parsed.reasoning,
     })
 
