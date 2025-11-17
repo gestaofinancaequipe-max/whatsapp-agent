@@ -9,6 +9,7 @@ import {
   FoodParseResultArray,
 } from '@/lib/services/food-parser'
 import { sanitizeFoodQuery } from '@/lib/utils/text'
+import Groq from 'groq-sdk'
 
 interface ParsedMealRequest {
   quantity: number
@@ -64,24 +65,234 @@ function parseMealRequest(text: string): ParsedMealRequest {
   }
 }
 
-function extractMeasureInGrams(
+/**
+ * Parse common_measures que pode vir como JSON string ou array
+ */
+function parseCommonMeasures(measures: any): Array<{ name: string; grams: number }> | null {
+  if (!measures) return null
+
+  // Se for string JSON, fazer parse
+  if (typeof measures === 'string') {
+    try {
+      const parsed = JSON.parse(measures)
+      return Array.isArray(parsed) ? parsed : null
+    } catch {
+      return null
+    }
+  }
+
+  // Se já for array, retornar direto
+  if (Array.isArray(measures)) {
+    return measures
+  }
+
+  return null
+}
+
+/**
+ * Normaliza nome da unidade para busca (singular, lowercase, remove acentos básicos)
+ */
+function normalizeUnitForSearch(unit: string): string {
+  return unit
+    .toLowerCase()
+    .trim()
+    .replace(/ões$/, 'ão') // colheres -> colher
+    .replace(/s$/, '') // remove plural
+}
+
+/**
+ * Busca medida em common_measures com normalização
+ */
+function findMeasureInCommonMeasures(
+  measures: Array<{ name: string; grams: number }>,
+  unit: string
+): { name: string; grams: number } | null {
+  const normalizedUnit = normalizeUnitForSearch(unit)
+
+  // Busca exata primeiro
+  const exactMatch = measures.find((m) =>
+    normalizeUnitForSearch(m.name) === normalizedUnit
+  )
+  if (exactMatch) return exactMatch
+
+  // Busca por inclusão (flexível)
+  const flexibleMatch = measures.find((m) => {
+    const normalizedMeasureName = normalizeUnitForSearch(m.name)
+    return (
+      normalizedMeasureName.includes(normalizedUnit) ||
+      normalizedUnit.includes(normalizedMeasureName)
+    )
+  })
+  if (flexibleMatch) return flexibleMatch
+
+  return null
+}
+
+/**
+ * Converte unidade para gramas usando LLM como fallback
+ */
+async function convertUnitToGramsWithLLM(
+  foodName: string,
+  quantity: number,
+  unit: string,
+  context: {
+    servingSizeGrams?: number | null
+    commonMeasures?: Array<{ name: string; grams: number }> | null
+  }
+): Promise<number | null> {
+  try {
+    const groqApiKey = process.env.GROQ_API_KEY
+    if (!groqApiKey) {
+      console.warn('⚠️ GROQ_API_KEY not configured, cannot use LLM conversion')
+      return null
+    }
+
+    const groq = new Groq({ apiKey: groqApiKey })
+
+    const contextInfo: string[] = []
+    if (context.servingSizeGrams) {
+      contextInfo.push(`Porção padrão do alimento: ${context.servingSizeGrams}g`)
+    }
+    if (context.commonMeasures && context.commonMeasures.length > 0) {
+      const measuresText = context.commonMeasures
+        .map((m) => `${m.name} = ${m.grams}g`)
+        .join(', ')
+      contextInfo.push(`Medidas conhecidas: ${measuresText}`)
+    }
+
+    const prompt = `Você é um especialista em nutrição. Converta a medida para gramas.
+
+Alimento: ${foodName}
+Quantidade: ${quantity}
+Unidade: ${unit}
+
+${contextInfo.length > 0 ? `Contexto:\n${contextInfo.join('\n')}` : ''}
+
+Responda APENAS com um número (quantidade de gramas), sem texto adicional.
+Se não souber a conversão exata, faça uma estimativa baseada no tipo de alimento e unidade comum.
+
+Exemplos:
+- "2 colheres de sopa de arroz" → aproximadamente 30g
+- "1 copo de leite" → aproximadamente 240g
+- "2 fatias de pão" → aproximadamente 50g
+
+Resposta (apenas número):`
+
+    console.log('🤖 Converting unit to grams with LLM:', {
+      food: foodName,
+      quantity,
+      unit,
+      hasContext: contextInfo.length > 0,
+    })
+
+    const response = await groq.chat.completions.create({
+      model: 'llama-3.3-70b-versatile',
+      messages: [
+        {
+          role: 'system',
+          content:
+            'Você é um especialista em nutrição. Responda APENAS com números, sem texto adicional.',
+        },
+        { role: 'user', content: prompt },
+      ],
+      temperature: 0.2,
+      max_tokens: 50,
+    })
+
+    const content = response.choices[0]?.message?.content?.trim()
+    if (!content) return null
+
+    // Extrair número da resposta (pode ter texto antes/depois)
+    const numberMatch = content.match(/(\d+(?:[.,]\d+)?)/)
+    if (!numberMatch) return null
+
+    const grams = parseFloat(numberMatch[1].replace(',', '.'))
+    if (isNaN(grams) || grams <= 0) return null
+
+    const totalGrams = grams * quantity
+
+    console.log('✅ LLM conversion result:', {
+      food: foodName,
+      quantity,
+      unit,
+      gramsPerUnit: grams,
+      totalGrams,
+    })
+
+    return totalGrams
+  } catch (error: any) {
+    console.error('❌ Error converting unit with LLM:', {
+      error: error.message,
+      food: foodName,
+      quantity,
+      unit,
+    })
+    return null
+  }
+}
+
+/**
+ * Extrai medida em gramas, tentando primeiro common_measures, depois LLM como fallback
+ */
+async function extractMeasureInGrams(
   food: any,
   quantity: number,
   unit?: string
-): number | null {
-  const measures = food.common_measures as
-    | Array<{ name: string; grams: number }>
-    | null
-  if (unit && measures && measures.length > 0) {
-    const match = measures.find((measure) =>
-      measure.name?.toLowerCase().includes(unit)
-    )
+): Promise<number | null> {
+  // Se não tem unidade, usar serving_size_grams como fallback
+  if (!unit) {
+    if (food.serving_size_grams) {
+      return food.serving_size_grams * quantity
+    }
+    return null
+  }
+
+  // Tentar buscar em common_measures primeiro
+  const measures = parseCommonMeasures(food.common_measures)
+  if (measures && measures.length > 0) {
+    const match = findMeasureInCommonMeasures(measures, unit)
     if (match && match.grams) {
+      console.log('✅ Found measure in common_measures:', {
+        food: food.name,
+        unit,
+        measureName: match.name,
+        gramsPerUnit: match.grams,
+        quantity,
+        totalGrams: match.grams * quantity,
+      })
       return match.grams * quantity
     }
   }
 
+  // Se não encontrou em common_measures, usar LLM como fallback
+  console.log('⚠️ Measure not found in common_measures, using LLM fallback:', {
+    food: food.name,
+    unit,
+    quantity,
+  })
+
+  const llmGrams = await convertUnitToGramsWithLLM(
+    food.name,
+    quantity,
+    unit,
+    {
+      servingSizeGrams: food.serving_size_grams,
+      commonMeasures: measures,
+    }
+  )
+
+  if (llmGrams) {
+    return llmGrams
+  }
+
+  // Último fallback: usar serving_size_grams
   if (food.serving_size_grams) {
+    console.log('⚠️ Using serving_size_grams as final fallback:', {
+      food: food.name,
+      servingSizeGrams: food.serving_size_grams,
+      quantity,
+      totalGrams: food.serving_size_grams * quantity,
+    })
     return food.serving_size_grams * quantity
   }
 
@@ -204,7 +415,7 @@ export async function handleLogFoodIntent(
       : parsed.quantity
   const quantityUnit = singleResult?.quantity_unit || parsed.unit
 
-  const grams = extractMeasureInGrams(food, quantityValue, quantityUnit)
+  const grams = await extractMeasureInGrams(food, quantityValue, quantityUnit)
   const ratio =
     grams && food.serving_size_grams
       ? grams / food.serving_size_grams
@@ -318,7 +529,7 @@ async function handleMultipleFoods(
     const quantityValue = foodItem.quantity_value || 1
     const quantityUnit = foodItem.quantity_unit || undefined
 
-    const grams = extractMeasureInGrams(food, quantityValue, quantityUnit)
+    const grams = await extractMeasureInGrams(food, quantityValue, quantityUnit)
     const ratio =
       grams && food.serving_size_grams
         ? grams / food.serving_size_grams
