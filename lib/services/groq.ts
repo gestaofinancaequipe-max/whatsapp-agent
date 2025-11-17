@@ -248,7 +248,7 @@ Seja educado e útil.`,
           Authorization: `Bearer ${groqApiKey}`,
         },
         body: JSON.stringify({
-          model: 'llama-3.3-70b-versatile',
+          model: 'llama-3.1-8b-instant',
           messages,
           temperature: 0.7,
           max_tokens: 500,
