@@ -1,4 +1,5 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js'
+import { IntentType } from '@/lib/types/intents'
 
 // Inicializar cliente Supabase
 export function getSupabaseClient(): SupabaseClient | null {
@@ -107,7 +108,7 @@ interface ConversationMessage {
   role: string
   content: string
   created_at: string
-  intent?: string | null // Opcional até a coluna ser adicionada ao schema
+  intent?: IntentType | null // Opcional até a coluna ser adicionada ao schema
 }
 
 export async function getConversationHistory(
