@@ -126,6 +126,10 @@ Para register_exercise:
 - Extraia [exercicio, duracao] EXATAMENTE como o usuário escreveu
 - Se duração não especificada: null
 - Se a mensagem é apenas o nome do exercício (ex: "caminhada", "crossfit", "natação"), extraia como exercício
+- CONTEXTO IMPORTANTE: Se a última mensagem do assistente perguntou sobre duração (ex: "Quanto tempo você fez?"), e o usuário responde apenas com duração (ex: "30 minutos"), você DEVE:
+  * Extrair a duração da resposta atual
+  * Usar o exercício mencionado na mensagem anterior do assistente (ex: "Identifiquei: CrossFit")
+  * Retornar o exercício e a duração juntos
 - Exemplos:
   * "corri 30 minutos" → [{"exercicio":"corrida","duracao":"30 minutos"}]
   * "fiz 25 min de cross-fit" → [{"exercicio":"cross-fit","duracao":"25 min"}]
@@ -135,6 +139,7 @@ Para register_exercise:
   * "crossfit" → [{"exercicio":"crossfit","duracao":null}]
   * "natacao" → [{"exercicio":"natacao","duracao":null}]
   * "30 min de esteira e 20 min de bicicleta" → [{"exercicio":"esteira","duracao":"30 min"},{"exercicio":"bicicleta","duracao":"20 min"}]
+  * Contexto: assistente perguntou "Quanto tempo você fez?" sobre "CrossFit", usuário responde "30 minutos" → [{"exercicio":"CrossFit","duracao":"30 minutos"}]
 
 Para update_user_data:
 - EXTRAIA dados estruturados: nome (opcional), gênero (masculino/feminino), peso (kg), altura (cm), idade (anos), meta calórica (kcal), meta de proteína (g)
@@ -160,9 +165,12 @@ Para update_user_data:
   * "meu nome é João" → {"user_name": "João"} (APENAS nome)
 
 Retorne JSON:
-- Para register_meal: {"intent": "register_meal", "confidence": 0.95, "items": [{"alimento":"...","quantidade":"..."}]}
+- Para register_meal: {"intent": "register_meal", "confidence": 0.95, "items": [{"alimento":"arroz","quantidade":"100g"}]}
+- Para register_exercise: {"intent": "register_exercise", "confidence": 0.95, "items": [{"exercicio":"cross-fit","duracao":"25 min"}]}
+- Para register_exercise sem duração: {"intent": "register_exercise", "confidence": 0.95, "items": [{"exercicio":"caminhada","duracao":null}]}
 - Para update_user_data: {"intent": "update_user_data", "confidence": 0.95, "user_data": {"weight_kg": 82}} (exemplo com apenas 1 campo)
 - Para update_user_data com múltiplos campos: {"intent": "update_user_data", "confidence": 0.95, "user_data": {"age": 32, "height_cm": 170}} (exemplo com 2 campos)
+- IMPORTANTE: Para register_exercise, SEMPRE retorne o campo "items" com pelo menos um objeto contendo "exercicio" e "duracao" (duracao pode ser null se não especificada)
 - Inclua apenas os campos que foram mencionados ou inferidos pelo usuário
 - Se não conseguir extrair um campo, não inclua no JSON (não use null)`
 

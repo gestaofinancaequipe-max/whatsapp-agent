@@ -6,11 +6,12 @@ import Groq from 'groq-sdk'
 
 interface ProcessedExercise {
   exercise: any // ExerciseMetRecord do banco
-  duration: number // em minutos
+  duration: number | null // em minutos (null se não especificada)
   intensity: 'light' | 'moderate' | 'intense'
   metValue: number
-  caloriesBurned: number
+  caloriesBurned: number | null // null se não tem duração
   method: 'cache' | 'regex' | 'fuzzy' | 'llm'
+  needsDuration?: boolean // flag para indicar que precisa perguntar duração
 }
 
 /**
@@ -62,10 +63,18 @@ export async function processExerciseCascade(
     finalDuration = await extractDurationWithLLM(duracao)
   }
 
-  // Se não tem duração especificada, retornar null (usuário precisa especificar)
+  // Se não tem duração especificada, retornar objeto com needsDuration=true
   if (!finalDuration) {
-    console.log('❌ Could not determine duration')
-    return null
+    console.log('⚠️ Exercise found but duration missing - will ask user')
+    return {
+      exercise,
+      duration: null,
+      intensity,
+      metValue,
+      caloriesBurned: null,
+      method: 'fuzzy',
+      needsDuration: true,
+    }
   }
 
   // 5. CALCULAR CALORIAS (fórmula MET)

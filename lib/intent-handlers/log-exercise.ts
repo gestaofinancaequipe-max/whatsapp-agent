@@ -19,21 +19,40 @@ export async function handleLogExerciseIntent(
   }
 
   // Verificar se temos items extraídos do intent
-  // FALLBACK: Se não extraiu, usar a mensagem inteira como nome do exercício
+  // FALLBACK: Se não extraiu, tentar extrair exercício e duração da mensagem
   let exerciseItems = intentResult.items || []
   
   if (exerciseItems.length === 0) {
-    // Tentar extrair exercício da mensagem diretamente
+    // Primeiro, tentar extrair duração da mensagem original
+    const durationRegex = /(\d+(?:\.\d+)?)\s*(?:minutos?|min|hora|horas?|h)/i
+    const durationMatch = messageText.match(durationRegex)
+    let extractedDuration: string | null = null
+    
+    if (durationMatch) {
+      extractedDuration = durationMatch[1] + ' ' + (durationMatch[0].includes('hora') || durationMatch[0].includes('h') ? 'hora' : 'min')
+      console.log('🔄 Fallback: Extracted duration from message:', extractedDuration)
+    }
+    
+    // Agora limpar mensagem para pegar exercício
     const cleanedMessage = messageText
       .trim()
       .toLowerCase()
+      // Remover duração extraída
+      .replace(durationRegex, '')
       // Remover palavras irrelevantes
-      .replace(/\b(fiz|fazer|pratiquei|na|no|do|da|de|min|minutos?|hora|horas?)\b/gi, '')
+      .replace(/\b(fiz|fazer|pratiquei|na|no|do|da|de)\b/gi, '')
       .trim()
     
     if (cleanedMessage && cleanedMessage.length >= 3) {
-      console.log('🔄 Fallback: Using message text as exercise name:', cleanedMessage)
-      exerciseItems = [{ exercicio: cleanedMessage, duracao: null }]
+      console.log('🔄 Fallback: Using message text as exercise name:', {
+        exercise: cleanedMessage,
+        duration: extractedDuration,
+      })
+      exerciseItems = [{ exercicio: cleanedMessage, duracao: extractedDuration }]
+    } else if (extractedDuration) {
+      // Se só tem duração (sem exercício), o LLM deveria ter extraído do contexto
+      // Mas se não extraiu, vamos retornar erro pedindo o exercício
+      return '🤔 Identifiquei a duração, mas não consegui identificar o exercício. Pode descrever o que fez?'
     } else {
       return '🤔 Não consegui identificar o exercício. Pode descrever o que fez?'
     }
@@ -47,6 +66,7 @@ export async function handleLogExerciseIntent(
   // Processar cada dupla (exercicio, duracao)
   const processedItems: Array<any> = []
   const failedItems: Array<string> = []
+  const itemsNeedingDuration: Array<any> = [] // Exercícios encontrados mas sem duração
   const itemCache = new Map<string, any>() // Cache local para esta sessão
 
   for (const item of exerciseItems) {
@@ -73,15 +93,22 @@ export async function handleLogExerciseIntent(
     )
 
     if (processed) {
-      processedItems.push(processed)
-
-      console.log('✅ Exercise processed:', {
-        exercise: processed.exercise.exercise_name,
-        duration: `${processed.duration} min`,
-        intensity: processed.intensity,
-        caloriesBurned: processed.caloriesBurned.toFixed(0),
-        method: processed.method,
-      })
+      // Se precisa de duração, adicionar à lista de itens que precisam
+      if (processed.needsDuration) {
+        itemsNeedingDuration.push(processed)
+        console.log('⏳ Exercise found but needs duration:', {
+          exercise: processed.exercise.exercise_name,
+        })
+      } else {
+        processedItems.push(processed)
+        console.log('✅ Exercise processed:', {
+          exercise: processed.exercise.exercise_name,
+          duration: `${processed.duration} min`,
+          intensity: processed.intensity,
+          caloriesBurned: processed.caloriesBurned?.toFixed(0),
+          method: processed.method,
+        })
+      }
 
       // Log fallback para exercícios não encontrados (se necessário)
       if (processed.method === 'llm' && processed.exercise) {
@@ -99,13 +126,20 @@ export async function handleLogExerciseIntent(
     }
   }
 
+  // Se há exercícios que precisam de duração, perguntar
+  if (itemsNeedingDuration.length > 0) {
+    const exerciseNames = itemsNeedingDuration.map(p => p.exercise.exercise_name).join(', ')
+    return `✅ Identifiquei: ${exerciseNames}\n\n⏱️ Quanto tempo você fez? (ex: "30 minutos", "1 hora", "45 min")`
+  }
+
   if (processedItems.length === 0) {
     return `🤔 Não consegui processar: ${failedItems.join(', ')}`
   }
 
   // Somar totais
-  const totalDuration = processedItems.reduce((sum, i) => sum + i.duration, 0)
-  const totalCalories = processedItems.reduce((sum, i) => sum + i.caloriesBurned, 0)
+  // Nota: processedItems só contém itens com duração (sem needsDuration), então duration e caloriesBurned não são null
+  const totalDuration = processedItems.reduce((sum, i) => sum + (i.duration || 0), 0)
+  const totalCalories = processedItems.reduce((sum, i) => sum + (i.caloriesBurned || 0), 0)
 
   // Montar mensagem
   const visibleMessage =
