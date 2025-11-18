@@ -123,6 +123,11 @@ O que prefere?
     })
     .join('\n\n')
 
+  // Aviso sobre itens não encontrados
+  const failedItemsWarning = failedItems.length > 0
+    ? `\n\n⚠️ Não foi possível encontrar: ${failedItems.join(', ')}`
+    : ''
+
   const visibleMessage =
     processedItems.length === 1
       ? `🍽️ Refeição identificada
@@ -131,7 +136,7 @@ ${processedItems[0].quantity} ${processedItems[0].unit} de ${processedItems[0].f
 ${processedItems[0].calories.toFixed(0)} kcal | ${processedItems[0].protein_g.toFixed(1)}g prot
 
 ${DIVIDER}
-📊 TOTAL: ${totals.calories.toFixed(0)} kcal | ${totals.protein_g.toFixed(1)}g prot
+📊 TOTAL: ${totals.calories.toFixed(0)} kcal | ${totals.protein_g.toFixed(1)}g prot${failedItemsWarning}
 
 Está correto?
 
@@ -143,7 +148,7 @@ Está correto?
 ${itemsList}
 
 ${DIVIDER}
-📊 TOTAL: ${totals.calories.toFixed(0)} kcal | ${totals.protein_g.toFixed(1)}g prot
+📊 TOTAL: ${totals.calories.toFixed(0)} kcal | ${totals.protein_g.toFixed(1)}g prot${failedItemsWarning}
 
 Está correto?
 
