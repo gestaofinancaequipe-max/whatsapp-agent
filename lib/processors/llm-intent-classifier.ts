@@ -121,11 +121,16 @@ Para register_meal:
   * "2 colheres de arroz, 150g de frango" → [{"alimento":"arroz","quantidade":"2 colheres"},{"alimento":"frango","quantidade":"150g"}]
 
 Para register_exercise:
+- SEMPRE extraia o exercício, mesmo que não tenha duração especificada
 - Extraia [exercicio, duracao] EXATAMENTE como o usuário escreveu
 - Se duração não especificada: null
+- Se a mensagem é apenas o nome do exercício (ex: "caminhada", "crossfit", "natação"), extraia como exercício
 - Exemplos:
   * "corri 30 minutos" → [{"exercicio":"corrida","duracao":"30 minutos"}]
   * "malhei" → [{"exercicio":"musculacao","duracao":null}]
+  * "caminhada" → [{"exercicio":"caminhada","duracao":null}]
+  * "crossfit" → [{"exercicio":"crossfit","duracao":null}]
+  * "natacao" → [{"exercicio":"natacao","duracao":null}]
   * "30 min de esteira e 20 min de bicicleta" → [{"exercicio":"esteira","duracao":"30 min"},{"exercicio":"bicicleta","duracao":"20 min"}]
 
 Para update_user_data:

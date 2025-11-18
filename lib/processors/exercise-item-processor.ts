@@ -144,6 +144,17 @@ function extractDurationWithRegex(duracao: string | null): number | null {
  * Busca exercício usando fuzzy matching
  */
 async function findExerciseWithFuzzy(exercicio: string): Promise<any | null> {
+  // Primeiro, tentar buscar com o nome original (pode ser exato)
+  let exercise = await findExerciseMet(exercicio)
+  if (exercise) {
+    console.log('✅ Exercise found via ORIGINAL query:', {
+      query: exercicio,
+      found: exercise.exercise_name,
+    })
+    return exercise
+  }
+
+  // Depois, normalizar e tentar novamente
   const normalized = exercicio
     .toLowerCase()
     .trim()
@@ -153,11 +164,12 @@ async function findExerciseWithFuzzy(exercicio: string): Promise<any | null> {
     .replace(/\b(fiz|fazer|pratiquei|na|no|do|da|de)\b/gi, '')
     .trim()
 
-  // Tenta match exato primeiro
-  let exercise = await findExerciseMet(normalized)
+  // Tenta match exato com versão normalizada
+  exercise = await findExerciseMet(normalized)
   if (exercise) {
-    console.log('✅ Exercise found via EXACT match:', {
+    console.log('✅ Exercise found via NORMALIZED match:', {
       query: exercicio,
+      normalized,
       found: exercise.exercise_name,
     })
     return exercise

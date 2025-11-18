@@ -30,14 +30,44 @@ export async function findExerciseMet(
     // Estratégia de busca em cascata: exato -> starts with -> palavras completas -> parcial -> agressivo
     
     // 1. Match exato (case-insensitive) - com espaços
-    const { data: exactMatch } = await supabase
-      .from('exercise_met_table')
-      .select(
-        'id, exercise_name, exercise_name_normalized, aliases, met_light, met_moderate, met_intense, category'
-      )
-      .or(`exercise_name.ilike.${normalized},exercise_name_normalized.ilike.${normalized},aliases.cs.{${normalized}}`)
-      .limit(1)
-      .maybeSingle()
+    // Tentar busca SQL primeiro
+    let exactMatch = null
+    try {
+      const { data, error } = await supabase
+        .from('exercise_met_table')
+        .select(
+          'id, exercise_name, exercise_name_normalized, aliases, met_light, met_moderate, met_intense, category'
+        )
+        .or(`exercise_name.ilike.%${normalized}%,exercise_name_normalized.ilike.%${normalized}%`)
+        .limit(10)
+      
+      if (data && data.length > 0) {
+        // Verificar match exato em memória (mais confiável)
+        for (const candidate of data) {
+          const candidateName = (candidate.exercise_name_normalized || candidate.exercise_name).toLowerCase()
+          if (candidateName === normalized) {
+            exactMatch = candidate
+            break
+          }
+          // Verificar aliases
+          if (candidate.aliases && Array.isArray(candidate.aliases)) {
+            for (const alias of candidate.aliases) {
+              if (alias?.toLowerCase() === normalized) {
+                exactMatch = candidate
+                break
+              }
+            }
+            if (exactMatch) break
+          }
+        }
+      }
+      
+      if (error) {
+        console.warn('⚠️ SQL query error (trying fallback):', error.message)
+      }
+    } catch (err: any) {
+      console.warn('⚠️ SQL query exception (trying fallback):', err.message)
+    }
 
     if (exactMatch) {
       console.log('🔎 Exercise search result (exact match):', {
@@ -52,33 +82,52 @@ export async function findExerciseMet(
     // 1b. Match exato agressivo (sem espaços/hífens) - para casos como "cross-fit" → "crossfit"
     // Busca em memória comparando versões normalizadas sem espaços/hífens
     if (normalizedAggressive && normalizedAggressive.length >= 3) {
-      // Buscar candidatos que começam com as primeiras letras (para otimizar)
-      const prefix = normalizedAggressive.substring(0, Math.min(5, normalizedAggressive.length))
+      // Buscar candidatos de forma mais ampla (não apenas por prefixo)
       const { data: candidates } = await supabase
         .from('exercise_met_table')
         .select(
           'id, exercise_name, exercise_name_normalized, aliases, met_light, met_moderate, met_intense, category'
         )
-        .or(`exercise_name.ilike.${prefix}%,exercise_name_normalized.ilike.${prefix}%`)
-        .limit(50)
+        .or(`exercise_name.ilike.%${normalizedAggressive}%,exercise_name_normalized.ilike.%${normalizedAggressive}%`)
+        .limit(100) // Aumentar limite para pegar mais candidatos
 
       if (candidates && candidates.length > 0) {
         // Comparar versões normalizadas sem espaços/hífens
         for (const candidate of candidates) {
+          // Verificar exercise_name_normalized
           const candidateNormalized = sanitizeExerciseQuery(
             candidate.exercise_name_normalized || candidate.exercise_name
           )
           
           if (candidateNormalized === normalizedAggressive) {
-            console.log('🔎 Exercise search result (exact match aggressive):', {
+            console.log('🔎 Exercise search result (exact match aggressive - name):', {
               query,
               found: true,
               exerciseName: candidate.exercise_name,
-              matchType: 'exact_aggressive',
+              matchType: 'exact_aggressive_name',
               queryNormalized: normalizedAggressive,
               dbNormalized: candidateNormalized,
             })
             return candidate
+          }
+          
+          // Verificar aliases também!
+          if (candidate.aliases && Array.isArray(candidate.aliases)) {
+            for (const alias of candidate.aliases) {
+              const aliasNormalized = sanitizeExerciseQuery(alias)
+              if (aliasNormalized === normalizedAggressive) {
+                console.log('🔎 Exercise search result (exact match aggressive - alias):', {
+                  query,
+                  found: true,
+                  exerciseName: candidate.exercise_name,
+                  alias,
+                  matchType: 'exact_aggressive_alias',
+                  queryNormalized: normalizedAggressive,
+                  aliasNormalized,
+                })
+                return candidate
+              }
+            }
           }
         }
       }
@@ -153,11 +202,94 @@ export async function findExerciseMet(
       }
     }
 
+    // 5. FALLBACK FINAL: Buscar todos os exercícios e comparar em memória
+    // Útil se queries SQL falharem ou para casos edge
+    console.log('🔄 Fallback: Searching all exercises in memory...')
+    try {
+      const { data: allExercises } = await supabase
+        .from('exercise_met_table')
+        .select(
+          'id, exercise_name, exercise_name_normalized, aliases, met_light, met_moderate, met_intense, category'
+        )
+        .limit(500) // Buscar mais exercícios para garantir
+      
+      if (allExercises && allExercises.length > 0) {
+        // Comparar com versão normalizada (com espaços)
+        for (const exercise of allExercises) {
+          const exerciseName = (exercise.exercise_name_normalized || exercise.exercise_name).toLowerCase()
+          if (exerciseName === normalized) {
+            console.log('🔎 Exercise search result (fallback - name):', {
+              query,
+              found: true,
+              exerciseName: exercise.exercise_name,
+              matchType: 'fallback_name',
+            })
+            return exercise
+          }
+          
+          // Verificar aliases
+          if (exercise.aliases && Array.isArray(exercise.aliases)) {
+            for (const alias of exercise.aliases) {
+              if (alias?.toLowerCase() === normalized) {
+                console.log('🔎 Exercise search result (fallback - alias):', {
+                  query,
+                  found: true,
+                  exerciseName: exercise.exercise_name,
+                  alias,
+                  matchType: 'fallback_alias',
+                })
+                return exercise
+              }
+            }
+          }
+        }
+        
+        // Comparar com versão agressiva (sem espaços/hífens)
+        if (normalizedAggressive && normalizedAggressive.length >= 3) {
+          for (const exercise of allExercises) {
+            const exerciseNormalized = sanitizeExerciseQuery(
+              exercise.exercise_name_normalized || exercise.exercise_name
+            )
+            if (exerciseNormalized === normalizedAggressive) {
+              console.log('🔎 Exercise search result (fallback - aggressive name):', {
+                query,
+                found: true,
+                exerciseName: exercise.exercise_name,
+                matchType: 'fallback_aggressive_name',
+              })
+              return exercise
+            }
+            
+            // Verificar aliases agressivo
+            if (exercise.aliases && Array.isArray(exercise.aliases)) {
+              for (const alias of exercise.aliases) {
+                const aliasNormalized = sanitizeExerciseQuery(alias)
+                if (aliasNormalized === normalizedAggressive) {
+                  console.log('🔎 Exercise search result (fallback - aggressive alias):', {
+                    query,
+                    found: true,
+                    exerciseName: exercise.exercise_name,
+                    alias,
+                    matchType: 'fallback_aggressive_alias',
+                  })
+                  return exercise
+                }
+              }
+            }
+          }
+        }
+      }
+    } catch (err: any) {
+      console.error('❌ Fallback search failed:', err.message)
+    }
+
     // Se não encontrou nada, retornar null
     console.log('🔎 Exercise search result:', {
       query,
       found: false,
       matchType: 'none',
+      normalized,
+      normalizedAggressive,
     })
 
     return null

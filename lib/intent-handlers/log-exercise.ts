@@ -19,11 +19,27 @@ export async function handleLogExerciseIntent(
   }
 
   // Verificar se temos items extraídos do intent
-  if (!intentResult.items || intentResult.items.length === 0) {
-    return '🤔 Não consegui identificar o exercício. Pode descrever o que fez?'
+  // FALLBACK: Se não extraiu, usar a mensagem inteira como nome do exercício
+  let exerciseItems = intentResult.items || []
+  
+  if (exerciseItems.length === 0) {
+    // Tentar extrair exercício da mensagem diretamente
+    const cleanedMessage = messageText
+      .trim()
+      .toLowerCase()
+      // Remover palavras irrelevantes
+      .replace(/\b(fiz|fazer|pratiquei|na|no|do|da|de|min|minutos?|hora|horas?)\b/gi, '')
+      .trim()
+    
+    if (cleanedMessage && cleanedMessage.length >= 3) {
+      console.log('🔄 Fallback: Using message text as exercise name:', cleanedMessage)
+      exerciseItems = [{ exercicio: cleanedMessage, duracao: null }]
+    } else {
+      return '🤔 Não consegui identificar o exercício. Pode descrever o que fez?'
+    }
   }
 
-  console.log('💪 Processing exercise items:', intentResult.items)
+  console.log('💪 Processing exercise items:', exerciseItems)
 
   // Obter peso do usuário (necessário para cálculo de calorias)
   const userWeight = user.weight_kg || DEFAULT_WEIGHT_KG
@@ -33,7 +49,7 @@ export async function handleLogExerciseIntent(
   const failedItems: Array<string> = []
   const itemCache = new Map<string, any>() // Cache local para esta sessão
 
-  for (const item of intentResult.items) {
+  for (const item of exerciseItems) {
     if (!item.exercicio) continue
 
     const processed = await processExerciseCascade(
