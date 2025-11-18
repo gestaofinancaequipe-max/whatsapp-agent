@@ -1,7 +1,7 @@
 import { getOrCreateConversation, getMessagesSinceLastAssistantResponse, getLastAssistantMessage } from '@/lib/services/supabase'
 import { sendWhatsAppMessage } from '@/lib/whatsapp'
 import { classifyIntent } from '@/lib/processors/intent-classifier'
-import { getOrCreateUserByPhone } from '@/lib/services/users'
+import { getOrCreateUserByPhone, upsertUserData } from '@/lib/services/users'
 import {
   recordAssistantMessage,
   recordUserMessage,
@@ -64,12 +64,68 @@ export async function handleTextMessage({
     const isConfirmation = confirmationKeywords.includes(normalizedText)
     const isCorrection = correctionKeywords.includes(normalizedText)
     
+    // Verificar se está aguardando nome (onboarding)
+    const conversationState = await getConversationState(conversationId)
+    if (conversationState?.onboardingStep === 'name' && user?.id && !isConfirmation && !isCorrection) {
+      // Extrair nome da mensagem (remover palavras comuns e pegar primeira palavra válida)
+      const cleanedText = text.trim()
+      // Se a mensagem parece um nome (2-30 caracteres, sem números, sem comandos comuns)
+      const namePattern = /^[A-Za-zÀ-ÿ\s]{2,30}$/
+      const isLikelyName = namePattern.test(cleanedText) && 
+                          !cleanedText.toLowerCase().includes('comi') &&
+                          !cleanedText.toLowerCase().includes('corri') &&
+                          !cleanedText.toLowerCase().includes('saldo')
+      
+      if (isLikelyName) {
+        const userName = cleanedText.trim()
+        // Salvar nome
+        await upsertUserData(user.id, { user_name: userName })
+        
+        // Limpar estado e avançar para próxima etapa
+        await clearConversationState(conversationId)
+        
+        const reply = `Prazer, ${userName}! 😊
+
+Para calcular suas necessidades calóricas, preciso de alguns dados:
+
+📏 Peso, altura e idade
+💬 Pode enviar assim: "75kg, 180cm, 28 anos"
+
+(Não se preocupe, seus dados são privados e seguros)`.trim()
+        
+        await recordUserMessage({
+          conversationId,
+          content: text,
+          intent: 'update_user_data',
+          user: user || undefined,
+        })
+        
+        await recordAssistantMessage({
+          conversationId,
+          content: reply,
+          intent: 'update_user_data',
+          user: user || undefined,
+        })
+        
+        await simulateHumanDelay()
+        await sendWhatsAppMessage(senderPhone, reply)
+        
+        console.log('✅ Name captured and saved:', {
+          handlerId,
+          userName,
+          totalTime: Date.now() - startTime,
+        })
+        return
+      }
+    }
+    
     if ((isConfirmation || isCorrection) && user?.id) {
       // PRIORIDADE 1: Buscar estado da conversa (mais confiável)
-      const conversationState = await getConversationState(conversationId)
+      // (conversationState já foi buscado acima, mas pode ter sido atualizado)
+      const currentState = conversationState || await getConversationState(conversationId)
       
-      if (conversationState?.awaitingInput?.type === 'confirmation') {
-        const context = conversationState.awaitingInput.context
+      if (currentState?.awaitingInput?.type === 'confirmation') {
+        const context = currentState.awaitingInput.context
         
         if (isConfirmation) {
           // Confirmar usando dados do estado

@@ -2,6 +2,7 @@ import { IntentContext } from '@/lib/intent-handlers/types'
 import { UserRecord } from '@/lib/services/users'
 import { getOrCreateDailySummary } from '@/lib/services/daily-summaries'
 import { formatNumber } from '@/lib/utils/message-formatters'
+import { saveConversationState } from '@/lib/services/conversation-state'
 
 /**
  * Identifica quais campos estão faltando no perfil do usuário
@@ -21,18 +22,28 @@ function getMissingFields(user: UserRecord | null | undefined): string[] {
 
 function getUserDisplayName(user: UserRecord | null | undefined): string {
   if (user?.user_name) return user.user_name
-  if (user?.phone_number) {
-    const suffix = user.phone_number.slice(-4)
-    return `…${suffix}`
-  }
-  return 'por aqui'
+  // Se não tem nome, não mostrar sufixo do telefone - apenas omitir ou usar tratamento genérico
+  return ''
 }
 
 export async function handleGreetingIntent({
   user,
+  conversationId,
 }: IntentContext): Promise<string> {
   // Usuário novo (sem perfil)
   if (!user) {
+    // Salvar estado: aguardando nome
+    await saveConversationState(conversationId, {
+      phoneNumber: '',
+      lastIntent: 'greeting',
+      onboardingStep: 'name',
+      awaitingInput: {
+        type: 'data',
+        context: { step: 'name' },
+        expiresAt: new Date(Date.now() + 30 * 60 * 1000).toISOString(), // 30 min
+      },
+    })
+
     return `Olá! 👋
 
 Sou seu assistente pessoal de nutrição.
@@ -55,7 +66,10 @@ Para começar, como posso te chamar?`.trim()
     const net = consumed - burned
     const saldo = goal - net
 
-    return `Olá novamente, ${displayName}! 👋
+    // Se tem nome, usar. Se não, omitir
+    const greetingName = displayName ? `${displayName}!` : 'novamente!'
+
+    return `Olá ${greetingName} 👋
 
 📊 Status de hoje:
 • Consumido: ${formatNumber(consumed)}
@@ -67,8 +81,9 @@ O que você gostaria de fazer?`.trim()
 
   // Usuário retornando com perfil incompleto
   const missingList = missing.map((f, idx) => `${idx + 1}. ${f}`).join('\n')
+  const greetingName = displayName ? `${displayName}!` : 'novamente!'
   
-  return `Olá, ${displayName}! 👋
+  return `Olá ${greetingName} 👋
 
 Notei que faltam alguns dados no seu perfil:
 
