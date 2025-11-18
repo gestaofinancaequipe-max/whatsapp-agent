@@ -13,6 +13,7 @@ import { extractTempData, removeTempData, TemporaryMealData, TemporaryExerciseDa
 import { createConfirmedMeal } from '@/lib/services/meals'
 import { createConfirmedExercise } from '@/lib/services/exercises'
 import { getOrCreateDailySummary } from '@/lib/services/daily-summaries'
+import { getConversationState, clearConversationState } from '@/lib/services/conversation-state'
 
 interface TextHandlerParams {
   senderPhone: string
@@ -64,14 +65,152 @@ export async function handleTextMessage({
     const isCorrection = correctionKeywords.includes(normalizedText)
     
     if ((isConfirmation || isCorrection) && user?.id) {
-      // Buscar última mensagem do assistente para extrair dados temporários
+      // PRIORIDADE 1: Buscar estado da conversa (mais confiável)
+      const conversationState = await getConversationState(conversationId)
+      
+      if (conversationState?.awaitingInput?.type === 'confirmation') {
+        const context = conversationState.awaitingInput.context
+        
+        if (isConfirmation) {
+          // Confirmar usando dados do estado
+          if (context.mealData) {
+            const mealData = context.mealData
+            const dailySummary = await getOrCreateDailySummary(user.id)
+            
+            if (dailySummary) {
+              const confirmedMeal = await createConfirmedMeal({
+                userId: user.id,
+                dailySummaryId: dailySummary.id,
+                description: mealData.description,
+                calories: mealData.calories,
+                protein: mealData.protein_g,
+                carbs: mealData.carbs_g,
+                fat: mealData.fat_g,
+                fiber: mealData.fiber_g,
+                originalEstimate: mealData.originalEstimate,
+              })
+              
+              if (confirmedMeal) {
+                // Limpar estado após confirmação
+                await clearConversationState(conversationId)
+                
+                const reply = `✅ Refeição confirmada!\n\n${confirmedMeal.description}\n${confirmedMeal.calories} kcal | ${confirmedMeal.protein_g.toFixed(1)}g proteína`
+                
+                await recordUserMessage({
+                  conversationId,
+                  content: text,
+                  intent: 'register_meal',
+                  user: user || undefined,
+                })
+                
+                await recordAssistantMessage({
+                  conversationId,
+                  content: reply,
+                  intent: 'register_meal',
+                  user: user || undefined,
+                })
+                
+                await simulateHumanDelay()
+                await sendWhatsAppMessage(senderPhone, reply)
+                
+                console.log('✅ Meal confirmed from conversation state:', {
+                  handlerId,
+                  mealId: confirmedMeal.id,
+                  totalTime: Date.now() - startTime,
+                })
+                return
+              }
+            }
+          } else if (context.exerciseData) {
+            const exerciseData = context.exerciseData
+            const dailySummary = await getOrCreateDailySummary(user.id)
+            
+            if (dailySummary) {
+              const confirmedExercise = await createConfirmedExercise({
+                userId: user.id,
+                dailySummaryId: dailySummary.id,
+                description: exerciseData.description,
+                exerciseType: exerciseData.exerciseType,
+                durationMinutes: exerciseData.durationMinutes,
+                intensity: exerciseData.intensity,
+                metValue: exerciseData.metValue,
+                caloriesBurned: exerciseData.caloriesBurned,
+              })
+              
+              if (confirmedExercise) {
+                // Limpar estado após confirmação
+                await clearConversationState(conversationId)
+                
+                const reply = `✅ Exercício confirmado!\n\n${confirmedExercise.description}\n${confirmedExercise.calories_burned} kcal queimadas`
+                
+                await recordUserMessage({
+                  conversationId,
+                  content: text,
+                  intent: 'register_exercise',
+                  user: user || undefined,
+                })
+                
+                await recordAssistantMessage({
+                  conversationId,
+                  content: reply,
+                  intent: 'register_exercise',
+                  user: user || undefined,
+                })
+                
+                await simulateHumanDelay()
+                await sendWhatsAppMessage(senderPhone, reply)
+                
+                console.log('✅ Exercise confirmed from conversation state:', {
+                  handlerId,
+                  exerciseId: confirmedExercise.id,
+                  totalTime: Date.now() - startTime,
+                })
+                return
+              }
+            }
+          }
+        } else if (isCorrection) {
+          // Correção: limpar estado
+          await clearConversationState(conversationId)
+          
+          const reply = context.mealData
+            ? '🗑️ Refeição cancelada. Pode descrever novamente a refeição correta.'
+            : '🗑️ Exercício cancelado. Pode descrever novamente o exercício correto.'
+          
+          await recordUserMessage({
+            conversationId,
+            content: text,
+            intent: context.mealData ? 'register_meal' : 'register_exercise',
+            user: user || undefined,
+          })
+          
+          await recordAssistantMessage({
+            conversationId,
+            content: reply,
+            intent: context.mealData ? 'register_meal' : 'register_exercise',
+            user: user || undefined,
+          })
+          
+          await simulateHumanDelay()
+          await sendWhatsAppMessage(senderPhone, reply)
+          
+          console.log('✅ Correction handled (conversation state cleared):', {
+            handlerId,
+            type: context.mealData ? 'meal' : 'exercise',
+            totalTime: Date.now() - startTime,
+          })
+          return
+        }
+      }
+      
+      // FALLBACK: Se não encontrou estado, usar tempData (sistema atual)
       const lastAssistantMessage = await getLastAssistantMessage(conversationId)
       
       if (lastAssistantMessage) {
         const tempData = extractTempData(lastAssistantMessage.content)
         
         if (tempData) {
-          console.log('📋 Found temporary data:', {
+          console.log('📋 Found temporary data (fallback):', {
             handlerId,
             type: tempData.type,
             timestamp: tempData.timestamp,

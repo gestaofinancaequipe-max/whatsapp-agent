@@ -3,6 +3,7 @@ import { logFoodFallback } from '@/lib/services/fallback-log'
 import { encodeTempData, TemporaryExerciseData } from '@/lib/utils/temp-data'
 import { processExerciseCascade } from '@/lib/processors/exercise-item-processor'
 import { DIVIDER } from '@/lib/utils/message-formatters'
+import { saveConversationState } from '@/lib/services/conversation-state'
 
 const DEFAULT_WEIGHT_KG = 70
 
@@ -189,7 +190,7 @@ Confirma?
 2️⃣ Ajustar tempo
 3️⃣ Cancelar`
 
-  // Encode tempData
+  // Encode tempData (mantido como fallback)
   const tempData: TemporaryExerciseData = {
     type: 'exercise',
     timestamp: new Date().toISOString(),
@@ -216,6 +217,39 @@ Confirma?
             caloriesBurned: totalCalories,
           },
   }
+
+  // Salvar estado da conversa para confirmação
+  await saveConversationState(context.conversationId, {
+    phoneNumber: user.phone_number || '',
+    lastIntent: 'register_exercise',
+    awaitingInput: {
+      type: 'confirmation',
+      context: {
+        exerciseData:
+          processedItems.length === 1
+            ? {
+                description: `${processedItems[0].duration} min de ${processedItems[0].exercise.exercise_name}`,
+                exerciseType: processedItems[0].exercise.exercise_name,
+                durationMinutes: processedItems[0].duration,
+                intensity: processedItems[0].intensity,
+                metValue: processedItems[0].metValue,
+                caloriesBurned: processedItems[0].caloriesBurned,
+              }
+            : {
+                description: processedItems
+                  .map((i) => `${i.duration} min de ${i.exercise.exercise_name}`)
+                  .join(', '),
+                exerciseType: 'múltiplos',
+                durationMinutes: totalDuration,
+                intensity: 'moderate',
+                metValue:
+                  processedItems.reduce((sum, i) => sum + i.metValue, 0) / processedItems.length,
+                caloriesBurned: totalCalories,
+              },
+      },
+      expiresAt: new Date(Date.now() + 5 * 60 * 1000).toISOString(), // 5 minutos
+    },
+  })
 
   return `${visibleMessage}${encodeTempData(tempData)}`
 }

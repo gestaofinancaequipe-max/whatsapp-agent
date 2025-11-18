@@ -54,7 +54,7 @@ export async function handleUpdateUserDataIntent(
   }
 
   const payload: Record<string, any> = {}
-  const message = context.messageText
+  const messageText = context.messageText
   const missing = getMissingFields(context.user)
 
   // PRIORIDADE 1: Usar dados extraídos pelo LLM (se disponível)
@@ -78,7 +78,7 @@ export async function handleUpdateUserDataIntent(
   // PRIORIDADE 2: Fallback para regex (apenas se LLM não extraiu o campo)
   // Detectar peso
   if (!payload.weight_kg) {
-    const weightMatch = message.match(weightRegex)
+    const weightMatch = messageText.match(weightRegex)
     if (weightMatch) {
       const weightValue = weightMatch[1] || weightMatch[2]
       if (weightValue) {
@@ -90,7 +90,7 @@ export async function handleUpdateUserDataIntent(
 
   // Detectar altura (suporta cm e metros)
   if (!payload.height_cm) {
-    const heightMatch = message.match(heightRegex)
+    const heightMatch = messageText.match(heightRegex)
     if (heightMatch) {
       // Verificar se é em metros (1,7m ou 1.70m)
       if (heightMatch[1] || heightMatch[2]) {
@@ -115,7 +115,7 @@ export async function handleUpdateUserDataIntent(
 
   // Detectar idade
   if (!payload.age) {
-    const ageMatch = message.match(ageRegex)
+    const ageMatch = messageText.match(ageRegex)
     if (ageMatch) {
       const ageValue = ageMatch[1] || ageMatch[2]
       if (ageValue) {
@@ -127,7 +127,7 @@ export async function handleUpdateUserDataIntent(
 
   // Detectar gênero
   if (!payload.gender) {
-    const genderMatch = message.match(genderRegex)
+    const genderMatch = messageText.match(genderRegex)
     if (genderMatch) {
       const normalizedGender = normalizeGender(genderMatch[1] || genderMatch[0])
       if (normalizedGender) {
@@ -139,7 +139,7 @@ export async function handleUpdateUserDataIntent(
 
   // Detectar nome
   if (!payload.user_name) {
-    const nameMatch = message.match(nameRegex)
+    const nameMatch = messageText.match(nameRegex)
     if (nameMatch && nameMatch[1]) {
       payload.user_name = nameMatch[1].trim()
       console.log('✅ Detected name from regex fallback:', payload.user_name)
@@ -148,7 +148,7 @@ export async function handleUpdateUserDataIntent(
 
   // Detectar meta calórica
   if (!payload.goal_calories) {
-    const goalMatch = message.match(goalCaloriesRegex)
+    const goalMatch = messageText.match(goalCaloriesRegex)
     if (goalMatch) {
       const goalValue = goalMatch[1] || goalMatch[2]
       if (goalValue) {
@@ -160,7 +160,7 @@ export async function handleUpdateUserDataIntent(
 
   // Detectar meta de proteína
   if (!payload.goal_protein_g) {
-    const proteinMatch = message.match(goalProteinRegex)
+    const proteinMatch = messageText.match(goalProteinRegex)
     if (proteinMatch) {
       const proteinValue = proteinMatch[1] || proteinMatch[2]
       if (proteinValue) {

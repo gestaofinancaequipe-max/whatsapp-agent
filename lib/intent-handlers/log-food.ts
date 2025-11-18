@@ -5,6 +5,7 @@ import { UserRecord } from '@/lib/services/users'
 import { encodeTempData, TemporaryMealData } from '@/lib/utils/temp-data'
 import { processItemCascade } from '@/lib/processors/item-processor'
 import { DIVIDER } from '@/lib/utils/message-formatters'
+import { saveConversationState } from '@/lib/services/conversation-state'
 
 function getUserId(user?: UserRecord | null): string | null {
   return user?.id || null
@@ -150,7 +151,7 @@ Está correto?
 2️⃣ Ajustar quantidade
 3️⃣ Cancelar`
 
-  // Encode tempData
+  // Encode tempData (mantido como fallback)
   const tempData: TemporaryMealData = {
     type: 'meal',
     timestamp: new Date().toISOString(),
@@ -175,6 +176,37 @@ Está correto?
       },
     },
   }
+
+  // Salvar estado da conversa para confirmação
+  await saveConversationState(context.conversationId, {
+    phoneNumber: user?.phone_number || '',
+    lastIntent: 'register_meal',
+    awaitingInput: {
+      type: 'confirmation',
+      context: {
+        mealData: {
+          description: processedItems.map((i) => `${i.quantity} ${i.unit} de ${i.food.name}`).join(', '),
+          calories: totals.calories,
+          protein_g: totals.protein_g,
+          carbs_g: totals.carbs_g,
+          fat_g: totals.fat_g,
+          fiber_g: totals.fiber_g,
+          grams: totals.totalGrams,
+          originalEstimate: {
+            items: processedItems.map((i) => ({
+              food_id: i.food.id,
+              food_name: i.food.name,
+              quantity: i.quantity,
+              unit: i.unit,
+              grams: i.grams,
+            })),
+            totals,
+          },
+        },
+      },
+      expiresAt: new Date(Date.now() + 5 * 60 * 1000).toISOString(), // 5 minutos
+    },
+  })
 
   return `${visibleMessage}${encodeTempData(tempData)}`
 }
