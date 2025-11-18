@@ -4,6 +4,7 @@ import { logFoodFallback } from '@/lib/services/fallback-log'
 import { UserRecord } from '@/lib/services/users'
 import { encodeTempData, TemporaryMealData } from '@/lib/utils/temp-data'
 import { processItemCascade } from '@/lib/processors/item-processor'
+import { DIVIDER } from '@/lib/utils/message-formatters'
 
 function getUserId(user?: UserRecord | null): string | null {
   return user?.id || null
@@ -85,7 +86,20 @@ export async function handleLogFoodIntent(
   }
 
   if (processedItems.length === 0) {
-    return `🤔 Não consegui processar: ${failedItems.join(', ')}`
+    return `🤔 Não encontrei "${failedItems.join(', ')}" no meu catálogo
+
+💡 Tente:
+• Ser mais específico: "pizza calabresa" → "pizza de calabresa tamanho família"
+• Usar unidades padrão: "100g de X" ou "1 fatia de Y"
+• Descrever de outra forma
+
+Ou posso buscar na internet (demora ~10 seg).
+
+O que prefere?
+
+1️⃣ Vou reformular
+2️⃣ Busca na internet
+3️⃣ Cancelar`.trim()
   }
 
   // Somar totais
@@ -100,34 +114,41 @@ export async function handleLogFoodIntent(
 
   // Montar mensagem
   const itemsList = processedItems
-    .map((item) => {
+    .map((item, i) => {
       const qty = item.quantity > 1 ? `${item.quantity} ` : ''
       const unit = item.unit ? `${item.unit} de ` : ''
-      const gramsText = `(~${item.grams.toFixed(0)}g)`
-
-      return `• ${qty}${unit}${item.food.name} ${gramsText}: ${item.calories.toFixed(0)} kcal, ${item.protein_g.toFixed(1)}g proteína`
+      return `${i + 1}. ${qty}${unit}${item.food.name}
+     ${item.calories.toFixed(0)} kcal | ${item.protein_g.toFixed(1)}g prot`
     })
-    .join('\n')
+    .join('\n\n')
 
   const visibleMessage =
     processedItems.length === 1
-      ? `🍽️ ${processedItems[0].quantity} ${processedItems[0].unit} de ${processedItems[0].food.name} (~${processedItems[0].grams.toFixed(0)}g)
-- Calorias: ~${totals.calories.toFixed(0)} kcal
-- Proteína: ${totals.protein_g.toFixed(1)} g
-- Carboidratos: ${totals.carbs_g.toFixed(1)} g
-- Gorduras: ${totals.fat_g.toFixed(1)} g
-${totals.fiber_g > 0 ? `• Fibras: ${totals.fiber_g.toFixed(1)} g\n` : ''}
-Confirma? 1️⃣ Sim | 2️⃣ Corrigir`
-      : `🍽️ Refeição (~${totals.totalGrams.toFixed(0)}g)
+      ? `🍽️ Refeição identificada
+
+${processedItems[0].quantity} ${processedItems[0].unit} de ${processedItems[0].food.name}
+${processedItems[0].calories.toFixed(0)} kcal | ${processedItems[0].protein_g.toFixed(1)}g prot
+
+${DIVIDER}
+📊 TOTAL: ${totals.calories.toFixed(0)} kcal | ${totals.protein_g.toFixed(1)}g prot
+
+Está correto?
+
+1️⃣ Sim, registrar
+2️⃣ Ajustar quantidade
+3️⃣ Cancelar`
+      : `🍽️ Refeição identificada
+
 ${itemsList}
 
-📊 TOTAL:
-- Calorias: ~${totals.calories.toFixed(0)} kcal
-- Proteína: ${totals.protein_g.toFixed(1)} g
-- Carboidratos: ${totals.carbs_g.toFixed(1)} g
-- Gorduras: ${totals.fat_g.toFixed(1)} g
-${totals.fiber_g > 0 ? `• Fibras: ${totals.fiber_g.toFixed(1)} g\n` : ''}
-Confirma? 1️⃣ Sim | 2️⃣ Corrigir`
+${DIVIDER}
+📊 TOTAL: ${totals.calories.toFixed(0)} kcal | ${totals.protein_g.toFixed(1)}g prot
+
+Está correto?
+
+1️⃣ Sim, registrar
+2️⃣ Ajustar quantidade
+3️⃣ Cancelar`
 
   // Encode tempData
   const tempData: TemporaryMealData = {

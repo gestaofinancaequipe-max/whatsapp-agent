@@ -9,6 +9,7 @@ import {
 } from '@/lib/services/food-parser'
 import { IntentType } from '@/lib/types/intents'
 import { processItemCascade } from '@/lib/processors/item-processor'
+import { DIVIDER } from '@/lib/utils/message-formatters'
 
 function formatMacroLine(label: string, value: number | null) {
   if (value === null || value === undefined) return `${label}: 0 g`
@@ -24,6 +25,9 @@ export async function handleQueryFoodIntent(
   if (!queryOriginal) {
     return '🍽️ Qual alimento você quer analisar?'
   }
+
+  // Mensagem de processamento (opcional - pode ser removida se não quiser mostrar)
+  // console.log('🔍 Consultando informações nutricionais...')
 
   // PRIORIDADE 1: Usar dados já extraídos pelo classificador de intenção
   let foodName: string | null = null
@@ -121,7 +125,17 @@ export async function handleQueryFoodIntent(
       query: foodQuery,
       phoneNumber: user?.phone_number || 'unknown',
     })
-    return `🤔 Ainda não tenho dados sobre "${foodQuery}". Vou pesquisar e te aviso quando estiver disponível.`
+    return `🤔 "${foodQuery}" não está no meu catálogo ainda.
+
+💡 Sugestões:
+• Tente outro nome: "frango grelhado" → "peito de frango"
+• Use medidas: "100g de X"
+• Seja mais genérico: "pizza calabresa artesanal" → "pizza calabresa"
+
+Posso tentar buscar na internet?
+
+1️⃣ Sim, buscar (demora ~10 seg)
+2️⃣ Não, vou reformular`.trim()
   }
 
   // Se temos quantidade, processar para calcular valores exatos
@@ -182,17 +196,25 @@ export async function handleQueryFoodIntent(
     }
   }
 
-  const response = [
-    `🍽️ ${food.name} (${displayQuantity})`,
-    `• ${calories.toFixed(0)} kcal`,
-    `• ${formatMacroLine('Proteína', protein)}`,
-    `• ${formatMacroLine('Carboidratos', carbs)}`,
-    `• ${formatMacroLine('Gorduras', fat)}`,
-    '',
-    'Quer registrar? 1️⃣ Sim | 2️⃣ Não',
-  ]
+  return `📋 Informação Nutricional
 
-  return response.join('\n')
+${food.name} ${quantity ? `(${displayQuantity})` : '(porção padrão)'}
+
+${DIVIDER}
+🔥 ${calories.toFixed(0)} kcal
+🥩 ${protein.toFixed(1)}g proteína
+🍞 ${carbs.toFixed(1)}g carboidratos
+🥑 ${fat.toFixed(1)}g gorduras
+${fiber && fiber > 0 ? `🌾 ${fiber.toFixed(1)}g fibras` : ''}
+
+${quantity 
+  ? '💡 Valores calculados para a quantidade informada'
+  : '💡 Valores para porção padrão de 100g'}
+
+Quer registrar como refeição?
+
+1️⃣ Sim, registrar agora
+2️⃣ Não, só estava consultando`.trim()
 }
 
 function extractFoodFromHistory(

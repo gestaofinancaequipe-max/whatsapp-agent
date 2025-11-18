@@ -196,61 +196,47 @@ export async function handleUpdateUserDataIntent(
   }
   const refreshedMissing = getMissingFields(updatedUser)
 
-  // Se completou todos os campos obrigatórios
-  if (refreshedMissing.length === 0) {
-    return (
-      '✅ Perfil configurado!\n' +
-      (payload.user_name || context.user.user_name
-        ? `Nome: ${payload.user_name || context.user.user_name}\n`
-        : '') +
-      (payload.gender || context.user.gender
-        ? `Gênero: ${payload.gender || context.user.gender}\n`
-        : '') +
-      (payload.weight_kg || context.user.weight_kg
-        ? `Peso: ${payload.weight_kg || context.user.weight_kg} kg\n`
-        : '') +
-      (payload.height_cm || context.user.height_cm
-        ? `Altura: ${payload.height_cm || context.user.height_cm} cm\n`
-        : '') +
-      (payload.age || context.user.age
-        ? `Idade: ${payload.age || context.user.age} anos\n`
-        : '') +
-      (payload.goal_calories || context.user.goal_calories
-        ? `Meta calórica: ${payload.goal_calories || context.user.goal_calories} kcal\n`
-        : '') +
-      (payload.goal_protein_g || context.user.goal_protein_g
-        ? `Meta de proteína: ${payload.goal_protein_g || context.user.goal_protein_g} g\n`
-        : '') +
-      '\nAgora é só registrar suas refeições e exercícios. Digite "ajuda" quando quiser rever os comandos.'
-    )
+  // Criar mensagem de confirmação elegante
+  const fieldLabels: Record<string, string> = {
+    user_name: 'Nome',
+    gender: 'Gênero',
+    weight_kg: 'Peso',
+    height_cm: 'Altura',
+    age: 'Idade',
+    goal_calories: 'Meta de calorias',
+    goal_protein_g: 'Meta de proteína',
   }
 
-  // Se ainda faltam campos obrigatórios
+  const units: Record<string, string> = {
+    weight_kg: 'kg',
+    height_cm: 'cm',
+    age: 'anos',
+    goal_calories: 'kcal/dia',
+    goal_protein_g: 'g/dia',
+  }
+
+  const confirmationLines = Object.keys(payload).map(field => {
+    const label = fieldLabels[field] || field
+    const unit = units[field] || ''
+    const newValue = payload[field]
+    const oldValue = context.user?.[field as keyof UserRecord]
+
+    if (oldValue) {
+      return `• ${label}: ${oldValue}${unit} → ${newValue}${unit}`
+    }
+    return `• ${label}: ${newValue}${unit}`
+  })
+
+  let message = `✅ Perfil atualizado!\n\n${confirmationLines.join('\n')}`
+
+  // Se ainda faltam campos
   if (refreshedMissing.length > 0) {
-    return (
-      '✅ Dados atualizados!\n' +
-      (payload.user_name ? `Nome: ${payload.user_name}\n` : '') +
-      (payload.gender ? `Gênero: ${payload.gender}\n` : '') +
-      (payload.weight_kg ? `Peso: ${payload.weight_kg} kg\n` : '') +
-      (payload.height_cm ? `Altura: ${payload.height_cm} cm\n` : '') +
-      (payload.age ? `Idade: ${payload.age} anos\n` : '') +
-      (payload.goal_calories ? `Meta calórica: ${payload.goal_calories} kcal\n` : '') +
-      (payload.goal_protein_g ? `Meta de proteína: ${payload.goal_protein_g} g\n` : '') +
-      '\n📝 Ainda faltam:\n' +
-      refreshedMissing.map((item, idx) => `${idx + 1}. ${item}`).join('\n')
-    )
+    message += `\n\n⚠️ Ainda faltam:\n${refreshedMissing.map(f => `• ${f}`).join('\n')}`
+    message += '\n\nComplete para melhor precisão!'
+  } else {
+    message += '\n\n✅ Cadastro 100% completo!'
+    message += '\n\nAgora é só registrar suas refeições e exercícios. Digite "ajuda" quando quiser rever os comandos.'
   }
 
-  // Atualização normal (onboarding já completo)
-  return (
-    '✅ Dados atualizados!\n' +
-    (payload.user_name ? `Nome: ${payload.user_name}\n` : '') +
-    (payload.gender ? `Gênero: ${payload.gender}\n` : '') +
-    (payload.weight_kg ? `Peso: ${payload.weight_kg} kg\n` : '') +
-    (payload.height_cm ? `Altura: ${payload.height_cm} cm\n` : '') +
-    (payload.age ? `Idade: ${payload.age} anos\n` : '') +
-    (payload.goal_calories ? `Meta calórica: ${payload.goal_calories} kcal\n` : '') +
-    (payload.goal_protein_g ? `Meta de proteína: ${payload.goal_protein_g} g\n` : '') +
-    '\nContinue registrando suas refeições e exercícios! 💪'
-  )
+  return message.trim()
 }

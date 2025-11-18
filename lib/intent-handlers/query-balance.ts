@@ -1,9 +1,51 @@
 import { IntentContext } from '@/lib/intent-handlers/types'
 import { getOrCreateDailySummary } from '@/lib/services/daily-summaries'
+import {
+  createProgressBar,
+  formatNumber,
+  getBalanceEmoji,
+  DIVIDER,
+} from '@/lib/utils/message-formatters'
 
-function formatNumber(value: number | null | undefined, suffix = 'kcal') {
-  if (value === null || value === undefined) return `0 ${suffix}`
-  return `${Math.round(value)} ${suffix}`
+function getContextualAdvice(data: {
+  saldo: number
+  consumed: number
+  burned: number
+  goal: number
+}): string {
+  const { saldo, consumed, burned, goal } = data
+  const hour = new Date().getHours()
+
+  // Manhã - muito saldo
+  if (hour < 12 && saldo > goal * 0.7) {
+    return '💡 Você tem bastante espaço ainda. Café da manhã reforçado?'
+  }
+
+  // Tarde - saldo ok
+  if (hour >= 12 && hour < 18 && saldo > goal * 0.3) {
+    return '✅ Ritmo bom! Mantenha o foco no jantar.'
+  }
+
+  // Noite - saldo apertado
+  if (hour >= 18 && saldo < goal * 0.2 && saldo > 0) {
+    return '⚠️ Saldo baixo. Jantar leve é a melhor opção!'
+  }
+
+  // Estourou a meta
+  if (saldo < 0) {
+    const deficit = Math.abs(saldo)
+    if (burned < 200) {
+      return `💪 Que tal um treino de ${Math.ceil(deficit / 8)} min para compensar?`
+    }
+    return '⚠️ Acima da meta hoje. Amanhã é um novo dia!'
+  }
+
+  // Quase na meta (últimas 200 kcal)
+  if (saldo < 200) {
+    return '🎯 Quase lá! Uma refeição leve fecha o dia perfeitamente.'
+  }
+
+  return ''
 }
 
 export async function handleQueryBalanceIntent(
@@ -18,23 +60,30 @@ export async function handleQueryBalanceIntent(
     return '❌ Não consegui acessar seus dados hoje. Tente novamente em instantes.'
   }
 
-  const goalCalories = context.user.goal_calories || 2000
+  const goal = context.user.goal_calories || 2000
   const consumed = summary.total_calories_consumed || 0
   const burned = summary.total_calories_burned || 0
   const net = consumed - burned
-  const balance = goalCalories - net
+  const saldo = goal - net
+  const percentOfGoal = Math.round((net / goal) * 100)
+  const progressBar = createProgressBar(net, goal, 10)
+  const statusEmoji = getBalanceEmoji(saldo)
 
-  return [
-    '📊 Saldo de hoje:',
-    `Meta: ${formatNumber(goalCalories)}`,
-    `Consumido: ${formatNumber(consumed)}`,
-    `Queimado: ${formatNumber(burned)}`,
-    '',
-    `➡️ NET: ${formatNumber(net)}`,
-    `✅ SALDO: ${formatNumber(balance)}`,
-    balance > 0
-      ? 'Ainda dá para comer com tranquilidade! 😋'
-      : 'Você já bateu a meta hoje. Excelente controle! 💪',
-  ].join('\n')
+  const advice = getContextualAdvice({ saldo, consumed, burned, goal })
+
+  return `📊 SALDO DE HOJE
+
+${progressBar}
+${percentOfGoal}% da meta atingida
+
+🍽️ Consumido: ${formatNumber(consumed)}
+🔥 Queimado: ${formatNumber(burned)}
+${DIVIDER}
+⚖️ Líquido: ${formatNumber(net)}
+
+🎯 Meta diária: ${formatNumber(goal)}
+${statusEmoji} Saldo: ${saldo > 0 ? '+' : ''}${formatNumber(saldo)}
+
+${advice}`.trim()
 }
 

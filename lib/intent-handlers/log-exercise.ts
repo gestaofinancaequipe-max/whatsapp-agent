@@ -2,6 +2,7 @@ import { IntentContext } from '@/lib/intent-handlers/types'
 import { logFoodFallback } from '@/lib/services/fallback-log'
 import { encodeTempData, TemporaryExerciseData } from '@/lib/utils/temp-data'
 import { processExerciseCascade } from '@/lib/processors/exercise-item-processor'
+import { DIVIDER } from '@/lib/utils/message-formatters'
 
 const DEFAULT_WEIGHT_KG = 70
 
@@ -15,7 +16,13 @@ export async function handleLogExerciseIntent(
   }
 
   if (!user.weight_kg) {
-    return '⚖️ Para calcular calorias queimadas preciso do seu peso atual. Envie algo como "Peso 82kg" e depois tente registrar o exercício novamente.'
+    return `⚖️ Preciso saber seu peso para calcular calorias queimadas.
+
+Qual seu peso atual (em kg)?
+
+Ex: "75kg" ou "75"
+
+(Vou salvar para próximas vezes)`.trim()
   }
 
   // Verificar se temos items extraídos do intent
@@ -129,7 +136,12 @@ export async function handleLogExerciseIntent(
   // Se há exercícios que precisam de duração, perguntar
   if (itemsNeedingDuration.length > 0) {
     const exerciseNames = itemsNeedingDuration.map(p => p.exercise.exercise_name).join(', ')
-    return `✅ Identifiquei: ${exerciseNames}\n\n⏱️ Quanto tempo você fez? (ex: "30 minutos", "1 hora", "45 min")`
+    return `⏱️ Quanto tempo durou o treino?
+
+Exemplos:
+• "30 minutos"
+• "1 hora"
+• "45 min"`.trim()
   }
 
   if (processedItems.length === 0) {
@@ -144,27 +156,38 @@ export async function handleLogExerciseIntent(
   // Montar mensagem
   const visibleMessage =
     processedItems.length === 1
-      ? `💪 ${processedItems[0].duration} min de ${processedItems[0].exercise.exercise_name}
-- Calorias queimadas: ~${processedItems[0].caloriesBurned.toFixed(0)} kcal
-- Intensidade: ${processedItems[0].intensity}
-- MET: ${processedItems[0].metValue.toFixed(1)}
-- Peso considerado: ${userWeight} kg
+      ? `🏃 Exercício identificado
 
-Confirma? 1️⃣ Sim | 2️⃣ Corrigir`
-      : `💪 Treino (${totalDuration} min)
+${processedItems[0].exercise.exercise_name} • ${processedItems[0].duration} min
+MET ${processedItems[0].metValue.toFixed(1)} • Intensidade ${processedItems[0].intensity}
+
+${DIVIDER}
+🔥 QUEIMADO: ${processedItems[0].caloriesBurned.toFixed(0)} kcal
+
+Confirma?
+
+1️⃣ Sim, registrar
+2️⃣ Ajustar tempo
+3️⃣ Cancelar`
+      : `🏃 Exercício identificado
+
 ${processedItems
   .map(
     (item) =>
-      `• ${item.duration} min de ${item.exercise.exercise_name}: ~${item.caloriesBurned.toFixed(0)} kcal`
+      `${item.exercise.exercise_name} • ${item.duration} min: ~${item.caloriesBurned.toFixed(0)} kcal`
   )
   .join('\n')}
 
+${DIVIDER}
 📊 TOTAL:
-- Duração: ${totalDuration} min
-- Calorias queimadas: ~${totalCalories.toFixed(0)} kcal
-- Peso considerado: ${userWeight} kg
+• Duração: ${totalDuration} min
+• Calorias queimadas: ~${totalCalories.toFixed(0)} kcal
 
-Confirma? 1️⃣ Sim | 2️⃣ Corrigir`
+Confirma?
+
+1️⃣ Sim, registrar
+2️⃣ Ajustar tempo
+3️⃣ Cancelar`
 
   // Encode tempData
   const tempData: TemporaryExerciseData = {

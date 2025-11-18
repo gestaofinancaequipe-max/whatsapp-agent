@@ -1,5 +1,6 @@
 import { IntentContext } from '@/lib/intent-handlers/types'
 import { UserRecord } from '@/lib/services/users'
+import { getIMCCategory, DIVIDER } from '@/lib/utils/message-formatters'
 
 /**
  * Identifica quais campos estão faltando no perfil do usuário
@@ -26,72 +27,37 @@ export async function handleViewUserDataIntent(
     return '⚠️ Não encontrei seu cadastro. Digite "ajuda" para começar.'
   }
 
-  // Montar seções de dados
-  const sections: string[] = ['👤 Seus Dados Cadastrados\n']
-
-  // Dados pessoais
-  const personalData: string[] = []
-  if (user.user_name) {
-    personalData.push(`👋 Nome: ${user.user_name}`)
-  }
-  
-  if (user.gender) {
-    personalData.push(`⚧️ Gênero: ${user.gender}`)
+  // Calcular IMC se tiver peso e altura
+  let imcInfo = ''
+  if (user.weight_kg && user.height_cm) {
+    const imc = (user.weight_kg / ((user.height_cm / 100) ** 2)).toFixed(1)
+    const imcCategory = getIMCCategory(parseFloat(imc))
+    imcInfo = `\n💚 IMC: ${imc} (${imcCategory})`
   }
 
-  if (personalData.length > 0) {
-    sections.push(personalData.join('\n'))
-    sections.push('') // Linha em branco
-  }
-
-  // Dados físicos
-  const physicalData: string[] = []
-  if (user.weight_kg) {
-    physicalData.push(`📏 Peso: ${user.weight_kg} kg`)
-  } else {
-    physicalData.push('📏 Peso: Não informado')
-  }
-
-  if (user.height_cm) {
-    physicalData.push(`📐 Altura: ${user.height_cm} cm`)
-  } else {
-    physicalData.push('📐 Altura: Não informado')
-  }
-
-  if (user.age) {
-    physicalData.push(`🎂 Idade: ${user.age} anos`)
-  } else {
-    physicalData.push('🎂 Idade: Não informado')
-  }
-
-  if (physicalData.length > 0) {
-    sections.push(physicalData.join('\n'))
-  }
-
-  // Metas
-  sections.push('\n🎯 Metas:')
-  const goals: string[] = []
-  
-  if (user.goal_calories) {
-    goals.push(`• Calorias diárias: ${user.goal_calories} kcal`)
-  } else {
-    goals.push('• Calorias diárias: Não definida')
-  }
-
-  if (user.goal_protein_g) {
-    goals.push(`• Proteína diária: ${user.goal_protein_g} g`)
-  } else {
-    goals.push('• Proteína diária: Não definida')
-  }
-
-  sections.push(goals.join('\n'))
-
-  // Status do cadastro (baseado em campos faltantes)
   const missing = getMissingFields(user)
-  sections.push('\n' + (missing.length === 0 ? '✅ Cadastro completo' : '⚠️ Cadastro incompleto'))
+  const onboardingComplete = missing.length === 0
 
+  return `👤 SEU PERFIL
 
+${DIVIDER}
+📋 DADOS PESSOAIS
+• Nome: ${user.user_name || '—'}
+• Gênero: ${user.gender || '—'}
 
-  return sections.join('\n')
+📏 DADOS FÍSICOS
+• Peso: ${user.weight_kg ? `${user.weight_kg}kg` : '—'}
+• Altura: ${user.height_cm ? `${user.height_cm}cm` : '—'}
+• Idade: ${user.age ? `${user.age} anos` : '—'}${imcInfo}
+
+🎯 METAS
+• Calorias: ${user.goal_calories ? `${user.goal_calories} kcal/dia` : '—'}
+• Proteína: ${user.goal_protein_g ? `${user.goal_protein_g}g/dia` : '—'}
+
+${DIVIDER}
+${onboardingComplete 
+  ? '✅ Cadastro completo!' 
+  : '⚠️ Complete seu cadastro para melhor precisão'}
+
+Para atualizar: "Meu peso é Xkg"`.trim()
 }
-

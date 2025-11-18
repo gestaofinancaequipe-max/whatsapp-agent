@@ -4,20 +4,50 @@ import {
   countExercisesForDate,
   countMealsForDate,
 } from '@/lib/services/activity-metrics'
+import {
+  createProgressBar,
+  formatNumber,
+  formatDate,
+  getBalanceEmoji,
+  DIVIDER,
+  pluralize,
+} from '@/lib/utils/message-formatters'
 
-function formatDate(date: string) {
-  return new Intl.DateTimeFormat('pt-BR', {
-    day: '2-digit',
-    month: '2-digit',
-  }).format(new Date(date))
-}
+function getEndOfDayMotivation(data: {
+  saldo: number
+  mealsCount: number
+  exercisesCount: number
+  net: number
+  goal: number
+}): string {
+  const { saldo, mealsCount, exercisesCount, net, goal } = data
 
-function formatKcal(value: number | null | undefined) {
-  return `${Math.round(value || 0)} kcal`
-}
+  // Bateu meta perfeitamente
+  if (Math.abs(saldo) < 50) {
+    return '🎉 Dia impecável! Disciplina é tudo!'
+  }
 
-function formatProtein(value: number | null | undefined) {
-  return `${Math.round(value || 0)} g prot`
+  // Dentro da meta com folga
+  if (saldo > 0 && saldo < goal * 0.2) {
+    return '👏 Excelente controle! Continue assim!'
+  }
+
+  // Acima da meta mas treinou
+  if (saldo < 0 && exercisesCount > 0) {
+    return '💪 Treinou, isso já é um ganho! Amanhã compensa.'
+  }
+
+  // Acima da meta e não treinou
+  if (saldo < 0 && exercisesCount === 0) {
+    return '💡 Que tal um treino amanhã para ajudar?'
+  }
+
+  // Muito abaixo da meta (comeu pouco)
+  if (saldo > goal * 0.4) {
+    return '⚠️ Você comeu pouco hoje. Lembre-se: alimentação adequada é importante!'
+  }
+
+  return '✅ Mais um dia registrado. Consistência gera resultados!'
 }
 
 export async function handleDailySummaryIntent(
@@ -39,27 +69,55 @@ export async function handleDailySummaryIntent(
     summary.date
   )
 
-  const goalCalories = context.user.goal_calories || 2000
+  const goal = context.user.goal_calories || 2000
   const net = summary.net_calories || summary.total_calories_consumed || 0
-  const balance = goalCalories - net
-  const status =
-    balance >= 0
-      ? '✅ Dentro da meta!'
-      : '⚠️ Acima da meta, mas ainda dá tempo de ajustar.'
+  const saldo = goal - net
+  const percentOfGoal = Math.round((net / goal) * 100)
+  const progressBar = createProgressBar(net, goal, 10)
 
-  return [
-    `📊 Resumo de hoje (${dateLabel}):`,
-    '',
-    `🍽️ Consumido: ${formatKcal(summary.total_calories_consumed)} | ${formatProtein(summary.total_protein_g)}`,
-    `🏃 Queimado: ${formatKcal(summary.total_calories_burned)}`,
-    `⚖️ Líquido: ${formatKcal(net)}`,
-    '',
-    `Meta: ${formatKcal(goalCalories)}`,
-    `Saldo: ${formatKcal(balance)}`,
-    `Status: ${status}`,
-    '',
-    `Refeições confirmadas: ${mealsCount}`,
-    `Exercícios registrados: ${exercisesCount}`,
-  ].join('\n')
+  // Determinar status do dia
+  let statusMessage = ''
+  let statusEmoji = ''
+
+  if (saldo > 0 && percentOfGoal >= 85 && percentOfGoal <= 105) {
+    statusMessage = 'Dia perfeito!'
+    statusEmoji = '🎯'
+  } else if (saldo > 0) {
+    statusMessage = 'Dentro da meta'
+    statusEmoji = '✅'
+  } else {
+    statusMessage = 'Acima da meta'
+    statusEmoji = '⚠️'
+  }
+
+  const motivation = getEndOfDayMotivation({
+    saldo,
+    mealsCount,
+    exercisesCount,
+    net,
+    goal,
+  })
+
+  return `📊 RESUMO DO DIA
+${dateLabel}
+
+${progressBar}
+${statusEmoji} ${statusMessage} (${percentOfGoal}%)
+
+${DIVIDER}
+🍽️ Consumido: ${formatNumber(summary.total_calories_consumed)}
+🔥 Queimado: ${formatNumber(summary.total_calories_burned)}
+⚖️ Líquido: ${formatNumber(net)}
+
+🎯 Meta: ${formatNumber(goal)}
+${getBalanceEmoji(saldo)} Saldo: ${saldo > 0 ? '+' : ''}${formatNumber(saldo)}
+
+🥩 Proteína: ${formatNumber(summary.total_protein_g, 'g')}
+
+${DIVIDER}
+📝 ${mealsCount} ${pluralize(mealsCount, 'refeição', 'refeições')}
+💪 ${exercisesCount} ${pluralize(exercisesCount, 'treino', 'treinos')}
+
+${motivation}`.trim()
 }
 

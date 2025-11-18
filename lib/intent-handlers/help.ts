@@ -1,40 +1,49 @@
 import { IntentContext } from '@/lib/intent-handlers/types'
 import { getOrCreateDailySummary } from '@/lib/services/daily-summaries'
-
-const COMMANDS = [
-  { label: '🍽️ Registrar refeição', example: '"Comi 2 fatias de pizza"' },
-  { label: '🏃 Registrar exercício', example: '"Corri 30 minutos"' },
-  { label: '📊 Ver saldo do dia', example: '"Saldo" ou "Quanto posso comer?"' },
-  { label: '🥑 Info nutricional', example: '"Calorias do abacate"' },
-  { label: '👤 Ver meus dados', example: '"Meus dados" ou "Meu perfil"' },
-  { label: '📈 Resumo do dia/semana', example: '"Resumo do dia" ou "Resumo da semana"' },
-  { label: '🎯 Atualizar dados/metas', example: '"Peso 82kg", "Meta 1800 kcal" ou "Proteína 150g"' },
-]
-
-function buildCommandsText() {
-  return COMMANDS.map((cmd) => `${cmd.label}\n   Ex: ${cmd.example}`).join('\n\n')
-}
+import { formatNumber, DIVIDER } from '@/lib/utils/message-formatters'
 
 export async function handleHelpIntent({
   user,
 }: IntentContext): Promise<string> {
   let contextualTip = ''
+  const hasProfile = !!user
 
   if (user) {
     const summary = await getOrCreateDailySummary(user.id)
     if (summary && summary.total_calories_consumed > 0) {
-      contextualTip = `\n\n📌 Dica: hoje você já registrou ${summary.total_calories_consumed} kcal. Continue atualizando para manter o saldo em dia!`
+      contextualTip = `💡 Você já registrou ${formatNumber(summary.total_calories_consumed)} hoje. Continue atualizando!`
     } else {
-      contextualTip =
-        '\n\n📌 Dica: ainda não vi refeições hoje. Experimente mandar "Comi arroz e feijão" para registrar.'
+      contextualTip = '💡 Registre sua primeira refeição hoje!'
     }
+  } else {
+    contextualTip = '💡 Complete seu cadastro para começar!'
   }
 
-  return (
-    '🆘 Estou aqui para ajudar! Veja o que posso fazer:\n\n' +
-    buildCommandsText() +
-    contextualTip +
-    '\n\nSempre que quiser, digite "ajuda" novamente.'
-  )
+  return `📚 COMANDOS DISPONÍVEIS
+
+🍽️ ALIMENTAÇÃO
+• "Comi 2 ovos com pão integral"
+• "Almocei arroz, feijão e frango"
+• "Quantas calorias tem em 1 banana?"
+
+💪 EXERCÍCIOS
+• "Corri 30 minutos"
+• "Fiz musculação 1 hora"
+• "Treino funcional 45 min"
+
+📊 CONSULTAS
+• "Saldo" → Ver calorias restantes hoje
+• "Resumo" → Balanço completo do dia
+• "Semana" → Análise dos últimos 7 dias
+
+⚙️ PERFIL
+• "Meu peso é 75kg" → Atualizar dados
+• "Minha meta é 1800 kcal" → Mudar objetivo
+• "Meus dados" → Ver perfil completo
+
+${DIVIDER}
+${contextualTip}
+
+Dúvidas? Me mande mensagem!`.trim()
 }
 
