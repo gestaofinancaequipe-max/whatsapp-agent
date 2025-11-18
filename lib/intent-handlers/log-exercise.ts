@@ -52,8 +52,20 @@ export async function handleLogExerciseIntent(
   for (const item of exerciseItems) {
     if (!item.exercicio) continue
 
+    // Limpar nome do exercício: remover números que podem ter sido extraídos incorretamente
+    let exerciseName = item.exercicio.trim()
+    // Remover números no início ou seguidos de espaço (ex: "25 cross-fit" → "cross-fit")
+    exerciseName = exerciseName.replace(/^\d+\s+/, '').trim()
+    // Remover números no final (ex: "cross-fit 25" → "cross-fit")
+    exerciseName = exerciseName.replace(/\s+\d+$/, '').trim()
+    
+    console.log('🧹 Cleaned exercise name:', {
+      original: item.exercicio,
+      cleaned: exerciseName,
+    })
+
     const processed = await processExerciseCascade(
-      item.exercicio,
+      exerciseName,
       item.duracao || null,
       user.id,
       userWeight,
@@ -79,9 +91,9 @@ export async function handleLogExerciseIntent(
         })
       }
     } else {
-      failedItems.push(item.exercicio)
+      failedItems.push(exerciseName)
       await logFoodFallback({
-        query: item.exercicio,
+        query: exerciseName,
         phoneNumber: user.phone_number || 'unknown',
       })
     }

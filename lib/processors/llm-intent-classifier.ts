@@ -122,11 +122,14 @@ Para register_meal:
 
 Para register_exercise:
 - SEMPRE extraia o exercício, mesmo que não tenha duração especificada
+- IMPORTANTE: NÃO inclua números no nome do exercício - números são apenas duração
 - Extraia [exercicio, duracao] EXATAMENTE como o usuário escreveu
 - Se duração não especificada: null
 - Se a mensagem é apenas o nome do exercício (ex: "caminhada", "crossfit", "natação"), extraia como exercício
 - Exemplos:
   * "corri 30 minutos" → [{"exercicio":"corrida","duracao":"30 minutos"}]
+  * "fiz 25 min de cross-fit" → [{"exercicio":"cross-fit","duracao":"25 min"}]
+  * "25 min de crossfit" → [{"exercicio":"crossfit","duracao":"25 min"}]
   * "malhei" → [{"exercicio":"musculacao","duracao":null}]
   * "caminhada" → [{"exercicio":"caminhada","duracao":null}]
   * "crossfit" → [{"exercicio":"crossfit","duracao":null}]

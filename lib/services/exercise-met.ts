@@ -23,7 +23,9 @@ export async function findExerciseMet(
   console.log('🔎 Searching exercise MET:', { 
     query, 
     normalized, 
-    normalizedAggressive 
+    normalizedAggressive,
+    table: 'exercise_met_table',
+    fields: ['exercise_name', 'exercise_name_normalized', 'aliases']
   })
 
   try {
@@ -42,9 +44,24 @@ export async function findExerciseMet(
         .limit(10)
       
       if (data && data.length > 0) {
+        console.log('🔍 Found candidates from SQL:', {
+          count: data.length,
+          candidates: data.map(c => ({
+            name: c.exercise_name,
+            normalized: c.exercise_name_normalized,
+            aliases: c.aliases,
+          })),
+        })
+        
         // Verificar match exato em memória (mais confiável)
         for (const candidate of data) {
           const candidateName = (candidate.exercise_name_normalized || candidate.exercise_name).toLowerCase()
+          console.log('🔍 Comparing:', {
+            queryNormalized: normalized,
+            candidateName,
+            match: candidateName === normalized,
+          })
+          
           if (candidateName === normalized) {
             exactMatch = candidate
             break
@@ -52,7 +69,13 @@ export async function findExerciseMet(
           // Verificar aliases
           if (candidate.aliases && Array.isArray(candidate.aliases)) {
             for (const alias of candidate.aliases) {
-              if (alias?.toLowerCase() === normalized) {
+              const aliasLower = alias?.toLowerCase()
+              console.log('🔍 Comparing alias:', {
+                queryNormalized: normalized,
+                alias: aliasLower,
+                match: aliasLower === normalized,
+              })
+              if (aliasLower === normalized) {
                 exactMatch = candidate
                 break
               }
