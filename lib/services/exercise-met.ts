@@ -1,5 +1,5 @@
 import { getSupabaseClient } from '@/lib/services/supabase'
-import { sanitizeFoodQuery } from '@/lib/utils/text'
+import { sanitizeFoodQuery, sanitizeExerciseQuery } from '@/lib/utils/text'
 
 export interface ExerciseMetRecord {
   id: string
@@ -19,12 +19,17 @@ export async function findExerciseMet(
   if (!supabase) return null
 
   const normalized = sanitizeFoodQuery(query)
-  console.log('🔎 Searching exercise MET:', { query, normalized })
+  const normalizedAggressive = sanitizeExerciseQuery(query) // Versão sem espaços/hífens
+  console.log('🔎 Searching exercise MET:', { 
+    query, 
+    normalized, 
+    normalizedAggressive 
+  })
 
   try {
-    // Estratégia de busca em cascata: exato -> starts with -> palavras completas -> parcial
+    // Estratégia de busca em cascata: exato -> starts with -> palavras completas -> parcial -> agressivo
     
-    // 1. Match exato (case-insensitive)
+    // 1. Match exato (case-insensitive) - com espaços
     const { data: exactMatch } = await supabase
       .from('exercise_met_table')
       .select(
@@ -42,6 +47,41 @@ export async function findExerciseMet(
         matchType: 'exact',
       })
       return exactMatch
+    }
+
+    // 1b. Match exato agressivo (sem espaços/hífens) - para casos como "cross-fit" → "crossfit"
+    // Busca em memória comparando versões normalizadas sem espaços/hífens
+    if (normalizedAggressive && normalizedAggressive.length >= 3) {
+      // Buscar candidatos que começam com as primeiras letras (para otimizar)
+      const prefix = normalizedAggressive.substring(0, Math.min(5, normalizedAggressive.length))
+      const { data: candidates } = await supabase
+        .from('exercise_met_table')
+        .select(
+          'id, exercise_name, exercise_name_normalized, aliases, met_light, met_moderate, met_intense, category'
+        )
+        .or(`exercise_name.ilike.${prefix}%,exercise_name_normalized.ilike.${prefix}%`)
+        .limit(50)
+
+      if (candidates && candidates.length > 0) {
+        // Comparar versões normalizadas sem espaços/hífens
+        for (const candidate of candidates) {
+          const candidateNormalized = sanitizeExerciseQuery(
+            candidate.exercise_name_normalized || candidate.exercise_name
+          )
+          
+          if (candidateNormalized === normalizedAggressive) {
+            console.log('🔎 Exercise search result (exact match aggressive):', {
+              query,
+              found: true,
+              exerciseName: candidate.exercise_name,
+              matchType: 'exact_aggressive',
+              queryNormalized: normalizedAggressive,
+              dbNormalized: candidateNormalized,
+            })
+            return candidate
+          }
+        }
+      }
     }
 
     // 2. Match que começa com o termo

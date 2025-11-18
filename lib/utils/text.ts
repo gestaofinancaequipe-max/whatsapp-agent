@@ -10,6 +10,16 @@ export function sanitizeFoodQuery(text: string): string {
   return normalizeText(text).replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, ' ').trim()
 }
 
+/**
+ * Normalização agressiva para exercícios: remove espaços, hífens e caracteres especiais
+ * Útil para casos como "cross-fit" → "crossfit"
+ */
+export function sanitizeExerciseQuery(text: string): string {
+  return normalizeText(text)
+    .replace(/[^a-z0-9]/g, '') // Remove tudo exceto letras e números (inclui espaços e hífens)
+    .trim()
+}
+
 const FOOD_QUESTION_PREFIXES = [
   /^(quantas?|quanto)\s+(calorias?|kcal)\s+(tem|possui|existem)\s+/i,
   /(calorias?|kcal)\s+(tem|da|de)\s+/i,

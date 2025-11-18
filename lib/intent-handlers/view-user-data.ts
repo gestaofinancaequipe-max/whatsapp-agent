@@ -90,15 +90,7 @@ export async function handleViewUserDataIntent(
   const missing = getMissingFields(user)
   sections.push('\n' + (missing.length === 0 ? '✅ Cadastro completo' : '⚠️ Cadastro incompleto'))
 
-  // Instruções para atualizar
-  sections.push('\n💡 Para atualizar, envie:')
-  sections.push('• "Meu nome é João" para atualizar nome')
-  sections.push('• "Gênero masculino" para atualizar gênero')
-  sections.push('• "Peso 85kg" para atualizar peso')
-  sections.push('• "Altura 180cm" ou "1,80m" para atualizar altura')
-  sections.push('• "Idade 30 anos" para atualizar idade')
-  sections.push('• "Meta 2000 kcal" para atualizar meta de calorias')
-  sections.push('• "Proteína 150g" para atualizar meta de proteína')
+
 
   return sections.join('\n')
 }

@@ -1,6 +1,7 @@
 import { distance } from 'fastest-levenshtein'
 import { findExerciseMet, resolveMetValue } from '@/lib/services/exercise-met'
 import { getSupabaseClient } from '@/lib/services/supabase'
+import { sanitizeExerciseQuery } from '@/lib/utils/text'
 import Groq from 'groq-sdk'
 
 interface ProcessedExercise {
@@ -175,6 +176,9 @@ async function findExerciseWithFuzzy(exercicio: string): Promise<any | null> {
   if (!topExercises || topExercises.length === 0) return null
 
   let bestMatch = { exercise: null as any, score: 0 }
+  
+  // Normalização agressiva para comparação (remove espaços/hífens)
+  const normalizedAggressive = sanitizeExerciseQuery(normalized)
 
   for (const exercise of topExercises) {
     const exerciseNorm = (
@@ -183,8 +187,18 @@ async function findExerciseWithFuzzy(exercicio: string): Promise<any | null> {
       .toLowerCase()
       .normalize('NFD')
       .replace(/[\u0300-\u036f]/g, '')
-    const dist = distance(normalized, exerciseNorm)
-    const similarity = 1 - dist / Math.max(normalized.length, exerciseNorm.length)
+    
+    // Comparar com versão normalizada (com espaços) e agressiva (sem espaços/hífens)
+    const exerciseNormAggressive = sanitizeExerciseQuery(exerciseNorm)
+    
+    // Calcular similaridade com ambas as versões e pegar a melhor
+    const dist1 = distance(normalized, exerciseNorm)
+    const similarity1 = 1 - dist1 / Math.max(normalized.length, exerciseNorm.length)
+    
+    const dist2 = distance(normalizedAggressive, exerciseNormAggressive)
+    const similarity2 = 1 - dist2 / Math.max(normalizedAggressive.length, exerciseNormAggressive.length)
+    
+    const similarity = Math.max(similarity1, similarity2)
 
     if (similarity > bestMatch.score) {
       bestMatch = { exercise, score: similarity }
