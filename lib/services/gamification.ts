@@ -1,14 +1,12 @@
 import { getSupabaseClient } from '@/lib/services/supabase'
-
-function getTodayDate() {
-  return new Date().toISOString().substring(0, 10)
-}
+import { getTodayDateBR, getYesterdayDateBR } from '@/lib/utils/date-br'
 
 export async function updateUserStreaks(userId: string) {
   const supabase = getSupabaseClient()
   if (!supabase) return
 
-  const today = getTodayDate()
+  const today = getTodayDateBR()
+  const yesterdayStr = getYesterdayDateBR()
 
   const { data: user, error } = await supabase
     .from('users')
@@ -23,13 +21,24 @@ export async function updateUserStreaks(userId: string) {
     return
   }
 
+  // Converter last_user_message_at (UTC) para data no horário do Brasil
   const lastDate = user.last_user_message_at
-    ? user.last_user_message_at.substring(0, 10)
+    ? (() => {
+        const dateUTC = new Date(user.last_user_message_at)
+        // Converter para horário do Brasil usando Intl.DateTimeFormat
+        const formatter = new Intl.DateTimeFormat('en-US', {
+          timeZone: 'America/Sao_Paulo',
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit',
+        })
+        const parts = formatter.formatToParts(dateUTC)
+        const year = parts.find(p => p.type === 'year')?.value || ''
+        const month = parts.find(p => p.type === 'month')?.value || ''
+        const day = parts.find(p => p.type === 'day')?.value || ''
+        return `${year}-${month}-${day}`
+      })()
     : null
-
-  const yesterday = new Date()
-  yesterday.setDate(yesterday.getDate() - 1)
-  const yesterdayStr = yesterday.toISOString().substring(0, 10)
 
   let currentStreak = user.current_streak_days || 0
   if (lastDate === today) {

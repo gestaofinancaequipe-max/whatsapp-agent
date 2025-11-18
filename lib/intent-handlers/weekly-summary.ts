@@ -1,17 +1,27 @@
 import { IntentContext } from '@/lib/intent-handlers/types'
 import { getSummariesInRange } from '@/lib/services/daily-summaries'
+import { getTodayDateBR } from '@/lib/utils/date-br'
 
 function getDateRange() {
-  const end = new Date()
-  const start = new Date()
-  start.setDate(start.getDate() - 6)
-  const format = (date: Date) => date.toISOString().substring(0, 10)
+  // Usar data atual no horário do Brasil
+  const todayBR = getTodayDateBR()
+  const [year, month, day] = todayBR.split('-').map(Number)
+  
+  // Criar data de 6 dias atrás
+  const endDate = new Date(year, month - 1, day)
+  const startDate = new Date(year, month - 1, day - 6)
+  
+  const format = (date: Date) => {
+    const y = date.getFullYear()
+    const m = String(date.getMonth() + 1).padStart(2, '0')
+    const d = String(date.getDate()).padStart(2, '0')
+    return `${y}-${m}-${d}`
+  }
+  
   return {
-    start: format(start),
-    end: format(end),
-    label: `${start.toLocaleDateString('pt-BR')} - ${end.toLocaleDateString(
-      'pt-BR'
-    )}`,
+    start: format(startDate),
+    end: format(endDate),
+    label: `${startDate.toLocaleDateString('pt-BR')} - ${endDate.toLocaleDateString('pt-BR')}`,
   }
 }
 

@@ -1,4 +1,5 @@
 import { getSupabaseClient } from '@/lib/services/supabase'
+import { getTodayDateBR } from '@/lib/utils/date-br'
 
 export interface DailySummary {
   id: string
@@ -11,13 +12,9 @@ export interface DailySummary {
   created_at: string
 }
 
-function getTodayDate(): string {
-  return new Date().toISOString().substring(0, 10)
-}
-
 export async function getOrCreateDailySummary(
   userId: string,
-  date: string = getTodayDate()
+  date: string = getTodayDateBR()
 ): Promise<DailySummary | null> {
   const supabase = getSupabaseClient()
   if (!supabase) return null
