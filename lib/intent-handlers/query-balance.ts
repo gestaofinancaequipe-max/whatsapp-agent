@@ -15,7 +15,7 @@ function getContextualAdvice(data: {
   goal: number
 }): string {
   const { saldo, consumed, burned, goal } = data
-  
+
   // Obter hora no horário do Brasil (BRT/BRST)
   const hour = getHourBR()
 
