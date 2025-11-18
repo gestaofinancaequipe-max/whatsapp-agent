@@ -21,22 +21,46 @@ export function createProgressBar(
 }
 
 /**
- * Formatação de data amigável
+ * Formatação de data amigável (usa horário do Brasil)
  */
 export function formatDate(date: Date | string): string {
   const dateObj = typeof date === 'string' ? new Date(date) : date
-  const today = new Date()
-  const yesterday = new Date(today)
-  yesterday.setDate(yesterday.getDate() - 1)
+  
+  // Usar formatação no timezone do Brasil
+  const formatterBR = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/Sao_Paulo',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  })
+  
+  // Obter data de hoje e ontem no horário do Brasil
+  const todayBR = formatterBR.formatToParts(new Date())
+  const yesterdayBR = formatterBR.formatToParts(new Date(Date.now() - 24 * 60 * 60 * 1000))
+  const dateBR = formatterBR.formatToParts(dateObj)
+  
+  const getDateString = (parts: Intl.DateTimeFormatPart[]) => {
+    const year = parts.find(p => p.type === 'year')?.value || ''
+    const month = parts.find(p => p.type === 'month')?.value || ''
+    const day = parts.find(p => p.type === 'day')?.value || ''
+    return `${year}-${month}-${day}`
+  }
+  
+  const todayStr = getDateString(todayBR)
+  const yesterdayStr = getDateString(yesterdayBR)
+  const dateStr = getDateString(dateBR)
 
-  if (dateObj.toDateString() === today.toDateString()) {
+  if (dateStr === todayStr) {
     return 'Hoje'
   }
-  if (dateObj.toDateString() === yesterday.toDateString()) {
+  if (dateStr === yesterdayStr) {
     return 'Ontem'
   }
 
-  return dateObj.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })
+  // Formatar data no estilo brasileiro (dd/mm)
+  const day = dateBR.find(p => p.type === 'day')?.value || ''
+  const month = dateBR.find(p => p.type === 'month')?.value || ''
+  return `${day}/${month}`
 }
 
 /**

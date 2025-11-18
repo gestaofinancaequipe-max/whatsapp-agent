@@ -6,6 +6,7 @@ import {
   getBalanceEmoji,
   DIVIDER,
 } from '@/lib/utils/message-formatters'
+import { getHourBR } from '@/lib/utils/date-br'
 
 function getContextualAdvice(data: {
   saldo: number
@@ -14,19 +15,26 @@ function getContextualAdvice(data: {
   goal: number
 }): string {
   const { saldo, consumed, burned, goal } = data
-  const hour = new Date().getHours()
+  
+  // Obter hora no horário do Brasil (BRT/BRST)
+  const hour = getHourBR()
 
-  // Manhã - muito saldo
+  // Manhã (antes das 12h) - muito saldo
   if (hour < 12 && saldo > goal * 0.7) {
     return '💡 Você tem bastante espaço ainda. Café da manhã reforçado?'
   }
 
-  // Tarde - saldo ok
-  if (hour >= 12 && hour < 18 && saldo > goal * 0.3) {
+  // Período de almoço (12h-14h) - saldo ok
+  if (hour >= 12 && hour < 14 && saldo > goal * 0.3) {
+    return '✅ Ritmo bom! Continue assim no almoço.'
+  }
+
+  // Tarde (14h-18h) - saldo ok
+  if (hour >= 14 && hour < 18 && saldo > goal * 0.3) {
     return '✅ Ritmo bom! Mantenha o foco no jantar.'
   }
 
-  // Noite - saldo apertado
+  // Noite (18h+) - saldo apertado
   if (hour >= 18 && saldo < goal * 0.2 && saldo > 0) {
     return '⚠️ Saldo baixo. Jantar leve é a melhor opção!'
   }

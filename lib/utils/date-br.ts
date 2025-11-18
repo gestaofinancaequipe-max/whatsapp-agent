@@ -80,3 +80,47 @@ export function getDateRangeUTC(date: string): { start: string; end: string } {
   }
 }
 
+/**
+ * Retorna a hora atual no horário do Brasil (0-23)
+ * 
+ * @returns Hora no formato 0-23 no horário de Brasília (BRT/BRST)
+ */
+export function getHourBR(): number {
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/Sao_Paulo',
+    hour: 'numeric',
+    hour12: false,
+  })
+  return parseInt(formatter.format(new Date()), 10)
+}
+
+/**
+ * Retorna o timestamp atual no horário do Brasil formatado
+ * 
+ * @returns Timestamp ISO string convertido para horário do Brasil
+ */
+export function getNowBR(): Date {
+  // Criar uma data que representa "agora" no horário do Brasil
+  const now = new Date()
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/Sao_Paulo',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  })
+  
+  const parts = formatter.formatToParts(now)
+  const year = parseInt(parts.find(p => p.type === 'year')?.value || '0', 10)
+  const month = parseInt(parts.find(p => p.type === 'month')?.value || '0', 10) - 1
+  const day = parseInt(parts.find(p => p.type === 'day')?.value || '0', 10)
+  const hour = parseInt(parts.find(p => p.type === 'hour')?.value || '0', 10)
+  const minute = parseInt(parts.find(p => p.type === 'minute')?.value || '0', 10)
+  const second = parseInt(parts.find(p => p.type === 'second')?.value || '0', 10)
+  
+  return new Date(year, month, day, hour, minute, second)
+}
+

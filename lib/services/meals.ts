@@ -243,4 +243,140 @@ export async function createConfirmedMeal({
   return meal
 }
 
+/**
+ * Recalcula o daily_summary a partir das refeições confirmadas
+ * Útil quando há inconsistências nos dados agregados
+ */
+export async function recalculateDailySummary(
+  dailySummaryId: string
+): Promise<boolean> {
+  const supabase = getSupabaseClient()
+  if (!supabase) return false
+
+  try {
+    // Buscar todas as refeições confirmadas deste daily_summary
+    const { data: confirmedMeals, error: mealsError } = await supabase
+      .from('meals')
+      .select('calories, protein_g')
+      .eq('daily_summary_id', dailySummaryId)
+      .eq('status', 'confirmed')
+
+    if (mealsError) {
+      console.error('❌ Error fetching confirmed meals for recalculation:', mealsError)
+      return false
+    }
+
+    // Somar todos os valores
+    const totalCalories = (confirmedMeals || []).reduce(
+      (sum, meal) => sum + Math.round(meal.calories || 0),
+      0
+    )
+    const totalProtein = (confirmedMeals || []).reduce(
+      (sum, meal) => sum + (meal.protein_g || 0),
+      0
+    )
+
+    // Buscar o daily_summary para obter o total_calories_burned
+    const { data: dailySummary, error: summaryError } = await supabase
+      .from('daily_summaries')
+      .select('total_calories_burned')
+      .eq('id', dailySummaryId)
+      .single()
+
+    if (summaryError) {
+      console.error('❌ Error fetching daily summary for recalculation:', summaryError)
+      return false
+    }
+
+    const totalBurned = dailySummary?.total_calories_burned || 0
+    const netCalories = totalCalories - totalBurned
+
+    // Atualizar o daily_summary com os valores recalculados
+    const { error: updateError } = await supabase
+      .from('daily_summaries')
+      .update({
+        total_calories_consumed: totalCalories,
+        total_protein_g: totalProtein,
+        net_calories: netCalories,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', dailySummaryId)
+
+    if (updateError) {
+      console.error('❌ Error updating daily summary after recalculation:', updateError)
+      return false
+    }
+
+    console.log('✅ Daily summary recalculated:', {
+      dailySummaryId,
+      totalCalories,
+      totalProtein,
+      netCalories,
+    })
+
+    return true
+  } catch (error: any) {
+    console.error('❌ Error in recalculateDailySummary:', {
+      error: error.message,
+      dailySummaryId,
+    })
+    return false
+  }
+}
+
+/**
+ * Deleta uma refeição (pendente ou confirmada) e atualiza o daily_summary se necessário
+ */
+export async function deleteMeal(mealId: string): Promise<boolean> {
+  const supabase = getSupabaseClient()
+  if (!supabase) return false
+
+  try {
+    // Primeiro, buscar a refeição para saber se é confirmada e qual o daily_summary_id
+    const { data: meal, error: fetchError } = await supabase
+      .from('meals')
+      .select('id, status, daily_summary_id, calories, protein_g')
+      .eq('id', mealId)
+      .single()
+
+    if (fetchError || !meal) {
+      console.error('❌ Error fetching meal for deletion:', fetchError)
+      return false
+    }
+
+    const isConfirmed = meal.status === 'confirmed'
+    const dailySummaryId = meal.daily_summary_id
+
+    // Deletar a refeição
+    const { error: deleteError } = await supabase
+      .from('meals')
+      .delete()
+      .eq('id', mealId)
+
+    if (deleteError) {
+      console.error('❌ Error deleting meal:', deleteError)
+      return false
+    }
+
+    // Se era uma refeição confirmada, recalcular o daily_summary
+    if (isConfirmed && dailySummaryId) {
+      await recalculateDailySummary(dailySummaryId)
+    }
+
+    console.log('✅ Meal deleted:', {
+      mealId,
+      wasConfirmed: isConfirmed,
+      dailySummaryId,
+    })
+
+    return true
+  } catch (error: any) {
+    console.error('❌ Error in deleteMeal:', {
+      error: error.message,
+      mealId,
+    })
+    return false
+  }
+}
+
 

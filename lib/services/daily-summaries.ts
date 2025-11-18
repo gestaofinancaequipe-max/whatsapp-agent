@@ -123,3 +123,80 @@ export async function getSummariesInRange(
   }
 }
 
+/**
+ * Recalcula o daily_summary a partir das refeições confirmadas
+ * Útil quando há inconsistências após deletar refeições diretamente do banco
+ */
+export async function recalculateDailySummaryForDate(
+  userId: string,
+  date: string = getTodayDateBR()
+): Promise<boolean> {
+  const supabase = getSupabaseClient()
+  if (!supabase) return false
+
+  try {
+    // Buscar o daily_summary para este usuário e data
+    const summary = await getOrCreateDailySummary(userId, date)
+    if (!summary) return false
+
+    // Buscar todas as refeições confirmadas deste daily_summary
+    const { data: confirmedMeals, error: mealsError } = await supabase
+      .from('meals')
+      .select('calories, protein_g')
+      .eq('daily_summary_id', summary.id)
+      .eq('status', 'confirmed')
+
+    if (mealsError) {
+      console.error('❌ Error fetching confirmed meals for recalculation:', mealsError)
+      return false
+    }
+
+    // Somar todos os valores
+    const totalCalories = (confirmedMeals || []).reduce(
+      (sum, meal) => sum + Math.round(meal.calories || 0),
+      0
+    )
+    const totalProtein = (confirmedMeals || []).reduce(
+      (sum, meal) => sum + (meal.protein_g || 0),
+      0
+    )
+
+    const totalBurned = summary.total_calories_burned || 0
+    const netCalories = totalCalories - totalBurned
+
+    // Atualizar o daily_summary com os valores recalculados
+    const { error: updateError } = await supabase
+      .from('daily_summaries')
+      .update({
+        total_calories_consumed: totalCalories,
+        total_protein_g: totalProtein,
+        net_calories: netCalories,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', summary.id)
+
+    if (updateError) {
+      console.error('❌ Error updating daily summary after recalculation:', updateError)
+      return false
+    }
+
+    console.log('✅ Daily summary recalculated:', {
+      userId,
+      date,
+      dailySummaryId: summary.id,
+      totalCalories,
+      totalProtein,
+      netCalories,
+    })
+
+    return true
+  } catch (error: any) {
+    console.error('❌ Error in recalculateDailySummaryForDate:', {
+      error: error.message,
+      userId,
+      date,
+    })
+    return false
+  }
+}
+
