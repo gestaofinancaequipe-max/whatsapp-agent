@@ -140,11 +140,11 @@ Posso tentar buscar na internet?
 
   // Se temos quantidade, processar para calcular valores exatos
   let displayQuantity = food.serving_size || 'porção padrão'
-  let calories = food.calories
-  let protein = food.protein_g
-  let carbs = food.carbs_g
-  let fat = food.fat_g
-  let fiber = food.fiber_g
+  let calories = food.calories || 0
+  let protein = food.protein_g || 0
+  let carbs = food.carbs_g || 0
+  let fat = food.fat_g || 0
+  let fiber = food.fiber_g || 0
 
   if (quantity) {
     if (!user?.id) {
