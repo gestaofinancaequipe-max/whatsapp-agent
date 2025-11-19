@@ -57,12 +57,60 @@ export async function handleTextMessage({
     // Verificar se a mensagem é confirmação/correção e buscar dados temporários
     const normalizedText = text.trim().toLowerCase()
     
-    // Palavras-chave de confirmação
-    const confirmationKeywords = ['1', 'sim', 'quero', 'certo', 'confirmo', 'confirma', 'ok', 'beleza', 'pode ser']
-    const correctionKeywords = ['2', 'corrigir', 'correto', 'corrige', 'errado', 'não', 'nao']
+    // Palavras-chave de confirmação (verificar se está contida na mensagem)
+    const confirmationKeywords = [
+      '1', 
+      'sim', 
+      'quero', 
+      'certo', 
+      'confirmo', 
+      'confirma', 
+      'pode confirmar',
+      'confirmar',
+      'ok', 
+      'beleza', 
+      'pode ser',
+      'adicionar',
+      'adiciona',
+      'registrar',
+      'registra',
+      'salvar',
+      'salva',
+      'vai',
+      'tá certo',
+      'ta certo',
+      'está certo',
+      'esta certo',
+      'correto',
+      'perfeito',
+      'yes',
+      'y',
+      '👍',
+      '✅',
+    ]
+    const correctionKeywords = ['2', 'corrigir', 'corrige', 'errado', 'não', 'nao', 'cancelar', 'cancela']
     
-    const isConfirmation = confirmationKeywords.includes(normalizedText)
-    const isCorrection = correctionKeywords.includes(normalizedText)
+    // Verificar se a mensagem contém alguma palavra-chave de confirmação
+    // (match exato para palavras curtas, ou se está contida para frases)
+    const isConfirmation = confirmationKeywords.some(keyword => {
+      if (keyword.length <= 3) {
+        // Para palavras curtas, verificar match exato ou início da mensagem seguido de espaço
+        return normalizedText === keyword || normalizedText.startsWith(keyword + ' ')
+      } else {
+        // Para frases, verificar se está contida na mensagem
+        return normalizedText.includes(keyword)
+      }
+    })
+    
+    const isCorrection = correctionKeywords.some(keyword => {
+      if (keyword.length <= 3) {
+        // Para palavras curtas, verificar match exato ou início da mensagem seguido de espaço
+        return normalizedText === keyword || normalizedText.startsWith(keyword + ' ')
+      } else {
+        // Para frases, verificar se está contida na mensagem
+        return normalizedText.includes(keyword)
+      }
+    })
     
     // Verificar se está aguardando nome (onboarding)
     const conversationState = await getConversationState(conversationId)
@@ -124,6 +172,8 @@ Para calcular suas necessidades calóricas, preciso de alguns dados:
       // (conversationState já foi buscado acima, mas pode ter sido atualizado)
       const currentState = conversationState || await getConversationState(conversationId)
       
+      // Se é confirmação/correção, verificar estado OU tempData
+      // Não continuar para classificação de intent se for confirmação
       if (currentState?.awaitingInput?.type === 'confirmation') {
         const context = currentState.awaitingInput.context
         
@@ -262,8 +312,21 @@ Para calcular suas necessidades calóricas, preciso de alguns dados:
       // FALLBACK: Se não encontrou estado, usar tempData (sistema atual)
       const lastAssistantMessage = await getLastAssistantMessage(conversationId)
       
+      console.log('🔍 Checking for tempData in last assistant message:', {
+        handlerId,
+        hasLastMessage: !!lastAssistantMessage,
+        messagePreview: lastAssistantMessage?.content?.substring(0, 100),
+        hasTempDataDelimiter: lastAssistantMessage?.content?.includes('__TEMP_DATA_JSON__'),
+      })
+      
       if (lastAssistantMessage) {
         const tempData = extractTempData(lastAssistantMessage.content)
+        
+        console.log('📋 TempData extraction result:', {
+          handlerId,
+          found: !!tempData,
+          type: tempData?.type,
+        })
         
         if (tempData) {
           console.log('📋 Found temporary data (fallback):', {
@@ -399,6 +462,35 @@ Para calcular suas necessidades calóricas, preciso de alguns dados:
             return
           }
         }
+      }
+      
+      // Se é confirmação mas não encontrou dados, retornar mensagem apropriada
+      // (evitar que continue para classificação de intent)
+      if (isConfirmation) {
+        const reply = '🤔 Não encontrei uma refeição ou exercício pendente para confirmar. Pode descrever novamente?'
+        
+        await recordUserMessage({
+          conversationId,
+          content: text,
+          intent: 'unknown',
+          user: user || undefined,
+        })
+        
+        await recordAssistantMessage({
+          conversationId,
+          content: reply,
+          intent: 'unknown',
+          user: user || undefined,
+        })
+        
+        await simulateHumanDelay()
+        await sendWhatsAppMessage(senderPhone, reply)
+        
+        console.log('⚠️ Confirmation detected but no pending data found:', {
+          handlerId,
+          totalTime: Date.now() - startTime,
+        })
+        return
       }
     }
 
